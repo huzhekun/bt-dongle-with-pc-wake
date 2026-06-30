@@ -4,6 +4,7 @@
 #include "debug_log.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
+#include "usb_hid_wake.h"
 
 static power_state_t state = POWER_STATE_UNKNOWN;
 static bool wake_requested;
@@ -160,21 +161,26 @@ void power_supervisor_task(void) {
             set_state(POWER_STATE_HOST_ON_USB_HCI);
         } else if (wake_requested) {
             wake_requested = false;
-#if ENABLE_POWER_BUTTON_WAKE
+#if ENABLE_POWER_BUTTON_WAKE || ENABLE_STANDBY_HID_KEYBOARD
             set_state(POWER_STATE_WAKE_PULSE);
 #else
-            debug_log("wake ignored with ENABLE_POWER_BUTTON_WAKE=OFF: %s", wake_reason);
+            debug_log("wake ignored with wake outputs disabled: %s", wake_reason);
 #endif
         }
         break;
 
     case POWER_STATE_WAKE_PULSE:
+        usb_hid_wake_request_keypress();
+#if ENABLE_POWER_BUTTON_WAKE
         if (!power_supervisor_pwr_ok()) {
             debug_log("wake pulse: %s", wake_reason);
             power_supervisor_pulse_power_button_ms(POWER_BUTTON_PULSE_MS);
         } else {
             debug_log("wake pulse skipped: sense already high");
         }
+#else
+        debug_log("HID wake key requested: %s", wake_reason);
+#endif
         cooldown_until = make_timeout_time_ms(POST_WAKE_SENSE_SETTLE_MS);
         state_deadline = make_timeout_time_ms(POST_WAKE_SENSE_SETTLE_MS);
         set_state(POWER_STATE_WAIT_WAKE_SENSE_SETTLE);

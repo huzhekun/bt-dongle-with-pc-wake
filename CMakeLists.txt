@@ -19,6 +19,7 @@ option(ENABLE_CDC_DEBUG "Expose USB CDC debug serial" OFF)
 option(ENABLE_POWER_SUPERVISOR "Enable PC power supervisor state machine" ON)
 option(ENABLE_STANDBY_HCI_HOST "Enable Pico-owned standby HCI host mode" ON)
 option(ENABLE_POWER_BUTTON_WAKE "Allow firmware to pulse the PC power-button output for wake" ON)
+option(ENABLE_STANDBY_HID_KEYBOARD "Expose a USB HID keyboard for standby S3 wake" ON)
 option(ENABLE_USB_SCO "Expose SCO/iso endpoints required by TinyUSB BTH helper" OFF)
 option(ENABLE_UART_FLOW_CONTROL "Enable ESP32 UART RTS/CTS" ON)
 option(ENABLE_ACL_DEBUG_LOG "Log every ACL packet in CDC debug builds" OFF)
@@ -51,6 +52,7 @@ set(USB_BTH_DATA_EPSIZE 64 CACHE STRING "USB HCI ACL bulk endpoint size")
 set(POWER_BUTTON_PULSE_MS 200 CACHE STRING "PC power-button pulse duration")
 set(POST_WAKE_SENSE_SETTLE_MS 10000 CACHE STRING "Delay after power-button pulse before trusting power sense")
 set(BOOTSEL_CLEAR_HOLD_MS 5000 CACHE STRING "BOOTSEL hold time for clearing persisted BLE wake peers")
+set(STANDBY_HID_WAKE_KEY 0x68 CACHE STRING "USB HID key usage sent for standby wake, default F13")
 
 if (NOT (ESP32_HCI_UART_ID STREQUAL "0" OR ESP32_HCI_UART_ID STREQUAL "1"))
     message(FATAL_ERROR "ESP32_HCI_UART_ID must be 0 or 1")
@@ -69,6 +71,7 @@ add_executable(pico-usb-bt-wake
     src/backend_stub.c
     src/power_supervisor.c
     src/wake_policy.c
+    src/usb_hid_wake.c
     src/bootsel_button.c
     src/debug_log.c
 )
@@ -101,6 +104,7 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     ENABLE_POWER_SUPERVISOR=$<BOOL:${ENABLE_POWER_SUPERVISOR}>
     ENABLE_STANDBY_HCI_HOST=$<BOOL:${ENABLE_STANDBY_HCI_HOST}>
     ENABLE_POWER_BUTTON_WAKE=$<BOOL:${ENABLE_POWER_BUTTON_WAKE}>
+    ENABLE_STANDBY_HID_KEYBOARD=$<BOOL:${ENABLE_STANDBY_HID_KEYBOARD}>
     ENABLE_USB_SCO=$<BOOL:${ENABLE_USB_SCO}>
     ENABLE_UART_FLOW_CONTROL=$<BOOL:${ENABLE_UART_FLOW_CONTROL}>
     ENABLE_ACL_DEBUG_LOG=$<BOOL:${ENABLE_ACL_DEBUG_LOG}>
@@ -114,6 +118,7 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     WAKE_ON_BLE_CONTROLLER_NAME=$<BOOL:${WAKE_ON_BLE_CONTROLLER_NAME}>
     WAKE_ON_ANY_BLE_ADV=$<BOOL:${WAKE_ON_ANY_BLE_ADV}>
     CFG_TUD_BTH=$<BOOL:${ENABLE_USB_BTH}>
+    CFG_TUD_HID=$<BOOL:${ENABLE_STANDBY_HID_KEYBOARD}>
     CFG_TUD_BTH_ISO_ALT_COUNT=1
     CFG_TUD_BTH_EVENT_EPSIZE=${USB_BTH_EVENT_EPSIZE}
     CFG_TUD_BTH_DATA_EPSIZE=${USB_BTH_DATA_EPSIZE}
@@ -133,6 +138,7 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     POWER_BUTTON_PULSE_MS=${POWER_BUTTON_PULSE_MS}
     POST_WAKE_SENSE_SETTLE_MS=${POST_WAKE_SENSE_SETTLE_MS}
     BOOTSEL_CLEAR_HOLD_MS=${BOOTSEL_CLEAR_HOLD_MS}
+    STANDBY_HID_WAKE_KEY=${STANDBY_HID_WAKE_KEY}
 )
 
 if (HCI_BACKEND STREQUAL "cyw43")

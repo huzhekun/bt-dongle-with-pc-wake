@@ -23,6 +23,7 @@ PC USB host -> Pico TinyUSB Bluetooth HCI device -> UART H4 -> ESP32 controller_
 - USB command/event/ACL bridge.
 - Standby HCI host scaffold for BLE advertisement wake.
 - PC power-button pulse supervisor scaffold.
+- Standby USB HID keyboard wake path for S3 resume without a power-button connection.
 
 SCO/iso endpoints are left in the USB descriptor because TinyUSB's premade BTH descriptor includes the companion interface expected by the Bluetooth USB transport shape. The bundled TinyUSB BTH class exposes command, ACL, and event callbacks/APIs; this project keeps the H4 parser SCO-aware, but full SCO data pass-through will need either a TinyUSB BTH extension or a local BTH class driver with isochronous transfer callbacks.
 
@@ -91,6 +92,8 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 - `-DHCI_BACKEND=esp32_uart`, `stub`, or `cyw43`
 - `-DENABLE_CDC_DEBUG=ON`
 - `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses
+- `-DENABLE_STANDBY_HID_KEYBOARD=ON` to expose a standby USB keyboard wake interface, enabled by default
+- `-DSTANDBY_HID_WAKE_KEY=0x68` to choose the USB HID usage sent on wake; default is F13
 - `-DENABLE_ACL_DEBUG_LOG=ON` for verbose ACL packet logging during transport debugging
 - `-DENABLE_UART_FLOW_CONTROL=ON`
 - `-DWAKE_ON_KNOWN_BLE_PEER=ON` to wake when a BLE peer learned while the host was on advertises again, enabled by default
@@ -109,7 +112,7 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 
 By default, `PWR_OK` and USB VBUS are assumed present when their pins are `-1`, which makes bench USB dongle bring-up easier. The Pico 2 W front-panel build enables automatic power-button wake when `PIN_PWR_BUTTON_OUT` is set: it releases the pin with pull-up, simulates a press by driving it low for 200 ms, then waits 10 seconds before trusting the power LED/sense input again.
 
-When the power LED/sense input is configured and reads low, the firmware assumes the PC is off and detaches the USB Bluetooth adapter while it runs the standby HCI scanner. For pure USB dongle testing, either hold the sense pin high or build with `-DPIN_PWR_OK_SENSE=-1`.
+When `ENABLE_STANDBY_HID_KEYBOARD=ON`, the USB device stays connected in standby as a composite Bluetooth HCI plus boot-keyboard device with remote wake advertised. The Bluetooth bridge is disabled while the Pico owns the controller for standby scanning, and a matching wake event requests USB remote wake plus an F13 key press. If HID wake is disabled, the older behavior is used: when the power LED/sense input reads low, the firmware detaches USB while it runs the standby HCI scanner. For pure USB dongle testing, either hold the sense pin high or build with `-DPIN_PWR_OK_SENSE=-1`.
 
 The default standby BLE wake policy targets devices trying to return to this adapter: classic Bluetooth connection requests, BLE directed advertisements, BLE advertisements from peers learned during earlier host-side BLE connections, and Stadia Controller advertisements whose local name starts with `Stadia`. Learned BLE peers are stored in flash so they survive power cycles. For a strict saved-address-only Stadia wake policy, disable `WAKE_ON_STADIA_ADV` after the controller has been learned. Broader BLE matching is available through the wake options above.
 

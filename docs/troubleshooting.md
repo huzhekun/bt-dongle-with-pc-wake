@@ -4,10 +4,10 @@
 
 First confirm the device appears in `lsusb`. If it does not appear at all, check the power sense mode before chasing descriptors:
 
-- With `PIN_PWR_OK_SENSE=11`, GP11 must read 3.3 V for the USB Bluetooth adapter to be connected.
-- If GP11 is low or floating, the firmware assumes the PC is off, disconnects USB, and enters standby scan/wake mode.
+- With `PIN_PWR_OK_SENSE=11`, GP11 must read 3.3 V for the full USB Bluetooth bridge to be active.
+- If GP11 is low or floating, the firmware assumes the PC is off and enters standby scan/wake mode. With `ENABLE_STANDBY_HID_KEYBOARD=ON`, USB remains connected for HID remote wake; with it off, USB disconnects.
 - For pure Linux dongle testing, either hold GP11 high or build with `-DPIN_PWR_OK_SENSE=-1`.
-- The non-debug `ENABLE_CDC_DEBUG=OFF` build is the cleanest `btusb` test because it exposes only the Bluetooth controller function.
+- The non-debug `ENABLE_CDC_DEBUG=OFF -DENABLE_STANDBY_HID_KEYBOARD=OFF` build is the cleanest `btusb` test because it exposes only the Bluetooth controller function.
 
 Check `lsusb -v` and confirm the Bluetooth interface class tuple:
 

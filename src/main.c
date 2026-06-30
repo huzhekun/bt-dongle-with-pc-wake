@@ -8,6 +8,7 @@
 #include "hci_transport.h"
 #include "power_supervisor.h"
 #include "usb_bth_bridge.h"
+#include "usb_hid_wake.h"
 #include "wake_policy.h"
 
 static const hci_transport_t *transport;
@@ -44,14 +45,20 @@ static void backend_rx(hci_packet_type_t type, const uint8_t *packet, uint16_t l
 
 static void enter_host_usb_mode(void) {
     standby_configured = false;
+    usb_hid_wake_set_standby(false);
     usb_bth_bridge_set_enabled(true);
     tud_connect();
     debug_log("USB Bluetooth HCI bridge active");
 }
 
 static void enter_standby_mode(void) {
+    usb_hid_wake_set_standby(true);
     usb_bth_bridge_set_enabled(false);
-    tud_disconnect();
+    if (usb_hid_wake_keep_usb_connected()) {
+        tud_connect();
+    } else {
+        tud_disconnect();
+    }
     if (!standby_configured) {
         standby_configured = hci_host_configure_standby_wake();
         if (!standby_configured) {
@@ -77,10 +84,16 @@ int main(void) {
 
     hci_host_minimal_init(transport);
     usb_bth_bridge_init(transport);
+    usb_hid_wake_init();
 
     tusb_init();
     if (power_supervisor_get_state() != POWER_STATE_HOST_ON_USB_HCI) {
-        tud_disconnect();
+        if (usb_hid_wake_keep_usb_connected()) {
+            usb_hid_wake_set_standby(true);
+            tud_connect();
+        } else {
+            tud_disconnect();
+        }
     }
 
     while (true) {
@@ -93,8 +106,13 @@ int main(void) {
                 enter_standby_mode();
             } else if (state == POWER_STATE_HOST_SHUTTING_DOWN || state == POWER_STATE_HOST_OFF ||
                        state == POWER_STATE_WAIT_WAKE_SENSE_SETTLE) {
+                usb_hid_wake_set_standby(true);
                 usb_bth_bridge_set_enabled(false);
-                tud_disconnect();
+                if (usb_hid_wake_keep_usb_connected()) {
+                    tud_connect();
+                } else {
+                    tud_disconnect();
+                }
                 standby_configured = false;
             } else if (state == POWER_STATE_WAKE_PULSE) {
                 standby_configured = false;
@@ -115,6 +133,10 @@ int main(void) {
             sleep_ms(1);
         } else {
             transport->task();
+        }
+        if (state != POWER_STATE_HOST_ON_USB_HCI && usb_hid_wake_keep_usb_connected()) {
+            tud_task();
+            usb_hid_wake_task();
         }
         wake_policy_task();
         bootsel_button_task();

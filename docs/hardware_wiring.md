@@ -31,7 +31,7 @@ cmake --build build-pico2w
 
 Automatic power-button wake is enabled by default when `PIN_PWR_BUTTON_OUT` is configured. The firmware drives the power-button line low for 200 ms, releases it with pull-up, then waits 10 seconds before trusting the power LED/sense input again, so the PC has time to start and bring the LED/sense line high. Use `-DENABLE_POWER_BUTTON_WAKE=OFF` for bring-up if the power-button circuit or sense input is not ready.
 
-When the power LED/sense input is configured and low, the firmware assumes the PC is off and detaches the USB Bluetooth adapter while standby scanning is active. For pure USB dongle testing on another host, hold the sense pin at 3.3 V or build with `-DPIN_PWR_OK_SENSE=-1`.
+Standby HID keyboard wake is enabled by default with `-DENABLE_STANDBY_HID_KEYBOARD=ON`. In standby, USB remains connected as a composite Bluetooth HCI plus boot-keyboard device, but the Bluetooth bridge is disabled while the Pico runs the standby scanner. A matching wake event sends USB remote wake and an F13 key press, and also pulses GPIO10 if power-button wake is enabled. If standby HID wake is disabled, the firmware detaches USB while standby scanning is active. For pure USB dongle testing on another host, hold the sense pin at 3.3 V or build with `-DPIN_PWR_OK_SENSE=-1`.
 
 ## ESP32 HCI UART
 
