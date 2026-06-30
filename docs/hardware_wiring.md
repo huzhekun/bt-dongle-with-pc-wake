@@ -1,0 +1,87 @@
+# Hardware Wiring
+
+## Pico 2 W Onboard CYW43 HCI
+
+For the Pico 2 W path, do not connect an ESP32. The Bluetooth HCI controller is the Pico 2 W onboard CYW43 wireless chip, reached through the Pico SDK's low-level CYW43 HCI read/write API.
+
+Avoid these Pico 2 W GPIOs for external wiring:
+
+```text
+GPIO23 WL_REG_ON
+GPIO24 WL_DATA / HOST_WAKE
+GPIO25 WL_CS
+GPIO29 WL_CLOCK
+```
+
+Recommended front-panel GPIOs:
+
+```text
+GPIO10 power-button pulse output, released with pull-up, press drives low
+GPIO11 PC power LED header sense input, pulldown, 3.3 V means PC-on
+```
+
+GPIO10 is released as an input with pull-up, and simulates a power-button press by briefly driving low. That matches a front-panel switch line that is normally high and pressed by shorting to ground. The power-button output should still drive an isolated switch circuit when possible, not the motherboard header directly. The power LED header sense input should be protected/limited so the Pico pin only sees 0 V or 3.3 V.
+
+Build example:
+
+```powershell
+cmake -S . -B build-pico2w -G Ninja -DHCI_BACKEND=cyw43 -DPICO_BOARD=pico2_w -DPIN_PWR_BUTTON_OUT=10 -DPIN_PWR_OK_SENSE=11 -DPIN_USB_VBUS_SENSE=-1
+cmake --build build-pico2w
+```
+
+Automatic power-button wake is enabled by default when `PIN_PWR_BUTTON_OUT` is configured. The firmware drives the power-button line low for 200 ms, releases it with pull-up, then waits 10 seconds before trusting the power LED/sense input again, so the PC has time to start and bring the LED/sense line high. Use `-DENABLE_POWER_BUTTON_WAKE=OFF` for bring-up if the power-button circuit or sense input is not ready.
+
+When the power LED/sense input is configured and low, the firmware assumes the PC is off and detaches the USB Bluetooth adapter while standby scanning is active. For pure USB dongle testing on another host, hold the sense pin at 3.3 V or build with `-DPIN_PWR_OK_SENSE=-1`.
+
+## ESP32 HCI UART
+
+Use the same HCI wiring as the existing Pico + ESP32 hardware:
+
+```text
+Pico GPIO4 / UART1 TX -> ESP32 UART RX
+Pico GPIO5 / UART1 RX <- ESP32 UART TX
+Pico GND              -> ESP32 GND
+```
+
+Optional flow-control wiring, enabled by default:
+
+```text
+Pico GPIO6 / UART1 CTS <- ESP32 RTS
+Pico GPIO7 / UART1 RTS -> ESP32 CTS
+```
+
+Default UART config:
+
+```text
+baud: 921600
+format: 8N1
+framing: HCI H4
+flow control: RTS/CTS
+```
+
+## Existing SPI Wiring
+
+The older audio-offload SPI pins can remain attached:
+
+```text
+GPIO16 MISO
+GPIO17 CS
+GPIO18 SCK
+GPIO19 MOSI
+GPIO20 READY
+```
+
+This firmware does not initialize SPI, so those pins are not driven as SPI.
+
+## PC Wake Pins
+
+Recommended future connections:
+
+```text
+PWR_OK sense       -> level-shifted Pico input
+USB VBUS sense     -> Pico input, sense-only
+Power-button pulse -> optocoupler or MOSFET circuit controlled by Pico output
+ESP32 reset        -> ESP32 EN/reset through appropriate circuit
+```
+
+Do not drive a motherboard power-button pin directly from a Pico GPIO.
