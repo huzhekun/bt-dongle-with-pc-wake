@@ -30,6 +30,25 @@ static uint8_t usb_acl_buf[HCI_ACL_MAX_LEN];
 static uint16_t usb_acl_len;
 static uint16_t usb_acl_expected_len;
 static uint32_t dropped_acl_fragments;
+static uint8_t suppress_write_simple_pairing_mode_complete;
+static uint8_t suppress_le_set_random_address_complete;
+static uint8_t suppress_le_set_scan_parameters_complete;
+static uint8_t suppress_le_set_scan_enable_complete;
+static uint32_t le_adv_reports_seen;
+
+static uint16_t le16_at(const uint8_t *packet, uint16_t offset) {
+    return (uint16_t)packet[offset] | ((uint16_t)packet[offset + 1u] << 8u);
+}
+
+static const char *addr_type_name(uint8_t type) {
+    switch (type) {
+    case 0x00: return "public";
+    case 0x01: return "random";
+    case 0x02: return "public-id";
+    case 0x03: return "random-id";
+    default: return "unknown";
+    }
+}
 
 static uint16_t acl_packet_total_len(const uint8_t *packet) {
     return (uint16_t)(4u + (uint16_t)packet[2] + ((uint16_t)packet[3] << 8u));
@@ -55,7 +74,26 @@ static void log_hci_command(const char *prefix, const uint8_t *packet, uint16_t 
 #if ENABLE_CDC_DEBUG
     if (len >= 3) {
         uint16_t opcode = (uint16_t)packet[0] | ((uint16_t)packet[1] << 8u);
-        debug_log("%s cmd opcode=0x%04x plen=%u q=%u/%u", prefix, opcode, packet[2], usb_tail, usb_head);
+        if (opcode == HCI_OPCODE_LE_SET_SCAN_PARAMETERS && len >= 10u) {
+            debug_log("%s cmd LE Set Scan Params type=0x%02x int=0x%04x win=0x%04x own=0x%02x policy=0x%02x q=%u/%u",
+                      prefix, packet[3], le16_at(packet, 4), le16_at(packet, 6),
+                      packet[8], packet[9], usb_tail, usb_head);
+        } else if (opcode == HCI_OPCODE_LE_SET_SCAN_ENABLE && len >= 5u) {
+            debug_log("%s cmd LE Set Scan Enable enable=%u filter_dup=%u q=%u/%u",
+                      prefix, packet[3], packet[4], usb_tail, usb_head);
+        } else if (opcode == HCI_OPCODE_LE_CREATE_CONNECTION && len >= 28u) {
+            debug_log("%s cmd LE Create Conn scan_int=0x%04x scan_win=0x%04x policy=0x%02x peer_type=%s peer=%02x:%02x:%02x:%02x:%02x:%02x",
+                      prefix, le16_at(packet, 3), le16_at(packet, 5), packet[7],
+                      addr_type_name(packet[8]), packet[14], packet[13], packet[12],
+                      packet[11], packet[10], packet[9]);
+        } else if (opcode == HCI_OPCODE_LE_EXTENDED_CREATE_CONNECTION && len >= 13u) {
+            debug_log("%s cmd LE Ext Create Conn filter_policy=0x%02x own=0x%02x peer_type=%s peer=%02x:%02x:%02x:%02x:%02x:%02x phys=0x%02x",
+                      prefix, packet[3], packet[4], addr_type_name(packet[5]),
+                      packet[11], packet[10], packet[9], packet[8], packet[7], packet[6],
+                      packet[12]);
+        } else {
+            debug_log("%s cmd opcode=0x%04x plen=%u q=%u/%u", prefix, opcode, packet[2], usb_tail, usb_head);
+        }
     }
 #else
     (void)prefix;
@@ -118,8 +156,20 @@ static void log_hci_event(const char *prefix, const uint8_t *packet, uint16_t le
     } else if (packet[0] == HCI_EVENT_LE_META && len >= 13u && packet[2] == 0x07u) {
         uint16_t handle = (uint16_t)packet[3] | ((uint16_t)packet[4] << 8u);
         debug_log("%s evt LE data_length_change handle=0x%04x", prefix, handle);
-    } else if (packet[0] == HCI_EVENT_LE_META && len >= 3u && packet[2] == 0x02u) {
-        return;
+    } else if (packet[0] == HCI_EVENT_LE_META && len >= 3u &&
+               packet[2] == HCI_SUBEVENT_LE_ADVERTISING_REPORT) {
+        le_adv_reports_seen++;
+        if ((le_adv_reports_seen & 0x0fu) == 1u) {
+            debug_log("%s evt LE adv_report count=%lu reports=%u len=%u",
+                      prefix, le_adv_reports_seen, len >= 4u ? packet[3] : 0u, len);
+        }
+    } else if (packet[0] == HCI_EVENT_LE_META && len >= 3u &&
+               packet[2] == HCI_SUBEVENT_LE_EXTENDED_ADVERTISING_REPORT) {
+        le_adv_reports_seen++;
+        if ((le_adv_reports_seen & 0x0fu) == 1u) {
+            debug_log("%s evt LE ext_adv_report count=%lu reports=%u len=%u",
+                      prefix, le_adv_reports_seen, len >= 4u ? packet[3] : 0u, len);
+        }
     } else if (packet[0] == HCI_EVENT_LE_META && len >= 3u) {
         debug_log("%s evt LE subevent=0x%02x plen=%u len=%u", prefix, packet[2], packet[1], len);
     } else {
@@ -164,10 +214,65 @@ static bool queue_command_complete(uint16_t opcode, uint8_t status) {
     return queue_push(backend_queue, &backend_head, &backend_tail, HCI_PKT_EVENT, event, sizeof(event));
 }
 
+static bool queue_read_local_extended_features_complete(uint8_t page_number) {
+    uint8_t event[] = {
+        HCI_EVENT_COMMAND_COMPLETE,
+        0x0e,
+        0x01,
+        (uint8_t)(HCI_OPCODE_READ_LOCAL_EXTENDED_FEATURES & 0xffu),
+        (uint8_t)(HCI_OPCODE_READ_LOCAL_EXTENDED_FEATURES >> 8u),
+        0x00,
+        page_number,
+        0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    };
+    return queue_push(backend_queue, &backend_head, &backend_tail, HCI_PKT_EVENT, event, sizeof(event));
+}
+
 static bool hci_command_opcode_is(const uint8_t *packet, uint16_t len, uint16_t opcode) {
     if (len < 3u) return false;
     uint16_t packet_opcode = (uint16_t)packet[0] | ((uint16_t)packet[1] << 8u);
     return packet_opcode == opcode;
+}
+
+static bool hci_event_command_complete_opcode_is(const uint8_t *packet, uint16_t len, uint16_t opcode) {
+    if (len < 6u || packet[0] != HCI_EVENT_COMMAND_COMPLETE) return false;
+    uint16_t event_opcode = (uint16_t)packet[3] | ((uint16_t)packet[4] << 8u);
+    return event_opcode == opcode;
+}
+
+static bool usb_bth_bridge_should_drop_delayed_quirk_complete(const uint8_t *packet, uint16_t len) {
+#if HCI_BACKEND_cyw43
+    if (suppress_write_simple_pairing_mode_complete &&
+        hci_event_command_complete_opcode_is(packet, len, HCI_OPCODE_WRITE_SIMPLE_PAIRING_MODE)) {
+        suppress_write_simple_pairing_mode_complete--;
+        debug_log("CYW43 quirk: drop delayed Write Simple Pairing Mode complete");
+        return true;
+    }
+    if (suppress_le_set_random_address_complete &&
+        hci_event_command_complete_opcode_is(packet, len, HCI_OPCODE_LE_SET_RANDOM_ADDRESS)) {
+        suppress_le_set_random_address_complete--;
+        debug_log("CYW43 quirk: drop delayed LE Set Random Address complete");
+        return true;
+    }
+    if (suppress_le_set_scan_parameters_complete &&
+        hci_event_command_complete_opcode_is(packet, len, HCI_OPCODE_LE_SET_SCAN_PARAMETERS)) {
+        suppress_le_set_scan_parameters_complete--;
+        debug_log("CYW43 quirk: drop delayed LE Set Scan Parameters complete");
+        return true;
+    }
+    if (suppress_le_set_scan_enable_complete &&
+        hci_event_command_complete_opcode_is(packet, len, HCI_OPCODE_LE_SET_SCAN_ENABLE)) {
+        suppress_le_set_scan_enable_complete--;
+        debug_log("CYW43 quirk: drop delayed LE Set Scan Enable complete");
+        return true;
+    }
+#else
+    (void)packet;
+    (void)len;
+#endif
+    return false;
 }
 
 static void usb_bth_bridge_after_controller_send_quirk(const uint8_t *packet, uint16_t len) {
@@ -179,11 +284,47 @@ static void usb_bth_bridge_after_controller_send_quirk(const uint8_t *packet, ui
         if (!queue_command_complete(HCI_OPCODE_WRITE_SIMPLE_PAIRING_MODE, 0x00)) {
             debug_log("USB bridge backend queue full");
         }
+        if (suppress_write_simple_pairing_mode_complete != UINT8_MAX) suppress_write_simple_pairing_mode_complete++;
+    } else if (hci_command_opcode_is(packet, len, HCI_OPCODE_LE_SET_RANDOM_ADDRESS)) {
+        debug_log("CYW43 quirk: sent LE Set Random Address, synthesize complete");
+        if (!queue_command_complete(HCI_OPCODE_LE_SET_RANDOM_ADDRESS, 0x00)) {
+            debug_log("USB bridge backend queue full");
+        }
+        if (suppress_le_set_random_address_complete != UINT8_MAX) suppress_le_set_random_address_complete++;
+    } else if (hci_command_opcode_is(packet, len, HCI_OPCODE_LE_SET_SCAN_PARAMETERS)) {
+        debug_log("CYW43 quirk: sent LE Set Scan Parameters, synthesize complete");
+        if (!queue_command_complete(HCI_OPCODE_LE_SET_SCAN_PARAMETERS, 0x00)) {
+            debug_log("USB bridge backend queue full");
+        }
+        if (suppress_le_set_scan_parameters_complete != UINT8_MAX) suppress_le_set_scan_parameters_complete++;
+    } else if (hci_command_opcode_is(packet, len, HCI_OPCODE_LE_SET_SCAN_ENABLE)) {
+        debug_log("CYW43 quirk: sent LE Set Scan Enable, synthesize complete");
+        if (!queue_command_complete(HCI_OPCODE_LE_SET_SCAN_ENABLE, 0x00)) {
+            debug_log("USB bridge backend queue full");
+        }
+        if (suppress_le_set_scan_enable_complete != UINT8_MAX) suppress_le_set_scan_enable_complete++;
     }
 #else
     (void)packet;
     (void)len;
 #endif
+}
+
+static bool usb_bth_bridge_pre_controller_send_quirk(const uint8_t *packet, uint16_t len) {
+#if HCI_BACKEND_cyw43
+    if (hci_command_opcode_is(packet, len, HCI_OPCODE_READ_LOCAL_EXTENDED_FEATURES)) {
+        uint8_t page_number = len >= 4u ? packet[3] : 0x00u;
+        debug_log("CYW43 quirk: synthesize Read Local Extended Features page=%u", page_number);
+        if (!queue_read_local_extended_features_complete(page_number)) {
+            debug_log("USB bridge backend queue full");
+        }
+        return true;
+    }
+#else
+    (void)packet;
+    (void)len;
+#endif
+    return false;
 }
 
 void usb_bth_bridge_init(const hci_transport_t *transport) {
@@ -209,6 +350,10 @@ bool usb_bth_bridge_is_enabled(void) {
 void usb_bth_bridge_backend_packet(hci_packet_type_t type, const uint8_t *packet, uint16_t len) {
     if (!bridge_enabled) return;
     if (type != HCI_PKT_EVENT && type != HCI_PKT_ACL) return;
+
+    if (type == HCI_PKT_EVENT && usb_bth_bridge_should_drop_delayed_quirk_complete(packet, len)) {
+        return;
+    }
 
     if (type == HCI_PKT_EVENT && len >= 2 && packet[0] == HCI_EVENT_VENDOR_SPECIFIC && packet[1] >= 64u) {
         dropped_vendor_events++;
@@ -285,6 +430,10 @@ void usb_bth_bridge_task(void) {
 
     while (usb_tail != usb_head) {
         hci_queue_item_t *tx = &usb_queue[usb_tail];
+        if (tx->type == HCI_PKT_COMMAND && usb_bth_bridge_pre_controller_send_quirk(tx->data, tx->len)) {
+            usb_tail = (uint8_t)((usb_tail + 1u) % USB_QUEUE_DEPTH);
+            continue;
+        }
         if (!bridge_transport || !bridge_transport->send(tx->type, tx->data, tx->len)) {
             break;
         }
@@ -315,6 +464,7 @@ void usb_bth_bridge_task(void) {
 void tud_bt_hci_cmd_cb(void *hci_cmd, size_t cmd_len) {
     if (!bridge_enabled) return;
     log_hci_command("USB cb", hci_cmd, (uint16_t)cmd_len);
+    if (usb_bth_bridge_pre_controller_send_quirk(hci_cmd, (uint16_t)cmd_len)) return;
     if (!queue_push(usb_queue, &usb_head, &usb_tail, HCI_PKT_COMMAND, hci_cmd, (uint16_t)cmd_len)) {
         debug_log("USB HCI command queue full");
     }

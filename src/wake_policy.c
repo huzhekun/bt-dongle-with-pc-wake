@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#define MAX_KNOWN_BLE_PEERS 8u
+#define MAX_KNOWN_BLE_PEERS 16u
 #define WAKE_PEER_MAGIC 0x57424c45u
 #define WAKE_PEER_VERSION 1u
 #define WAKE_PEER_SAVE_DELAY_MS 2000u
@@ -40,9 +40,9 @@ typedef struct {
 _Static_assert(sizeof(wake_peer_store_t) <= FLASH_PAGE_SIZE, "wake peer store must fit one flash page");
 
 static ble_peer_t known_ble_peers[MAX_KNOWN_BLE_PEERS];
-static uint8_t next_known_ble_peer;
 static bool peers_dirty;
 static absolute_time_t peers_dirty_at;
+static uint32_t standby_adv_reports;
 
 static uint32_t checksum_bytes(const uint8_t *data, size_t len) {
     uint32_t h = 2166136261u;
@@ -83,9 +83,12 @@ static void load_known_ble_peers(void) {
         return;
     }
 
-    memcpy(known_ble_peers, store->peers, sizeof(known_ble_peers));
-    next_known_ble_peer = (uint8_t)(store->count % MAX_KNOWN_BLE_PEERS);
-    debug_log("Loaded %u BLE wake peer(s)", store->count);
+    uint8_t loaded = 0;
+    for (uint8_t i = 0; i < store->count && loaded < MAX_KNOWN_BLE_PEERS; i++) {
+        if (!store->peers[i].in_use) continue;
+        known_ble_peers[loaded++] = store->peers[i];
+    }
+    debug_log("Loaded %u BLE wake peer(s)", loaded);
 #endif
 }
 
@@ -140,7 +143,6 @@ static void mark_peers_dirty(void) {
 
 void wake_policy_init(void) {
     memset(known_ble_peers, 0, sizeof(known_ble_peers));
-    next_known_ble_peer = 0;
     peers_dirty = false;
     load_known_ble_peers();
 }
@@ -158,17 +160,45 @@ static bool ble_addr_equal(const ble_peer_t *peer, uint8_t addr_type, const uint
     return peer->in_use && peer->addr_type == addr_type && memcmp(peer->addr, addr, 6) == 0;
 }
 
-static bool remember_ble_peer(uint8_t addr_type, const uint8_t *addr) {
-#if WAKE_ON_KNOWN_BLE_PEER
-    for (uint8_t i = 0; i < MAX_KNOWN_BLE_PEERS; i++) {
-        if (ble_addr_equal(&known_ble_peers[i], addr_type, addr)) return false;
+static void remove_known_ble_peer_at(uint8_t index) {
+    for (uint8_t i = index; i + 1u < MAX_KNOWN_BLE_PEERS; i++) {
+        known_ble_peers[i] = known_ble_peers[i + 1u];
+    }
+    memset(&known_ble_peers[MAX_KNOWN_BLE_PEERS - 1u], 0, sizeof(known_ble_peers[0]));
+}
+
+static void append_known_ble_peer(uint8_t addr_type, const uint8_t *addr) {
+    uint8_t count = known_ble_peer_count();
+    if (count >= MAX_KNOWN_BLE_PEERS) {
+        remove_known_ble_peer_at(0);
+        count = MAX_KNOWN_BLE_PEERS - 1u;
     }
 
-    ble_peer_t *peer = &known_ble_peers[next_known_ble_peer];
+    ble_peer_t *peer = &known_ble_peers[count];
     peer->in_use = true;
     peer->addr_type = addr_type;
     memcpy(peer->addr, addr, 6);
-    next_known_ble_peer = (uint8_t)((next_known_ble_peer + 1u) % MAX_KNOWN_BLE_PEERS);
+}
+
+static bool remember_ble_peer(uint8_t addr_type, const uint8_t *addr) {
+#if WAKE_ON_KNOWN_BLE_PEER
+    for (uint8_t i = 0; i < MAX_KNOWN_BLE_PEERS; i++) {
+        if (!ble_addr_equal(&known_ble_peers[i], addr_type, addr)) continue;
+
+        uint8_t count = known_ble_peer_count();
+        if (count > 0u && i + 1u == count) return false;
+
+        ble_peer_t peer = known_ble_peers[i];
+        remove_known_ble_peer_at(i);
+        count = known_ble_peer_count();
+        known_ble_peers[count] = peer;
+        mark_peers_dirty();
+        debug_log("Refreshed BLE wake peer type=%u addr=%02x:%02x:%02x:%02x:%02x:%02x",
+                  addr_type, addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+        return true;
+    }
+
+    append_known_ble_peer(addr_type, addr);
     mark_peers_dirty();
     debug_log("Learned BLE wake peer type=%u addr=%02x:%02x:%02x:%02x:%02x:%02x",
               addr_type, addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
@@ -206,7 +236,6 @@ void wake_policy_observe_host_packet(hci_packet_type_t type, const uint8_t *pack
 
 void wake_policy_clear_known_peers(void) {
     memset(known_ble_peers, 0, sizeof(known_ble_peers));
-    next_known_ble_peer = 0;
     peers_dirty = false;
     (void)save_known_ble_peers();
     debug_log("Cleared BLE wake peer list");
@@ -326,6 +355,12 @@ static bool le_advertising_report_matches(const uint8_t *params, size_t len, con
         const uint8_t *addr = &params[pos + 2u];
         uint8_t data_len = params[pos + 8u];
         if (pos + 9u + data_len > len) break;
+        standby_adv_reports++;
+        if ((standby_adv_reports & 0x0fu) == 1u) {
+            debug_log("standby adv #%lu evt=0x%02x type=%u addr=%02x:%02x:%02x:%02x:%02x:%02x data=%u",
+                      standby_adv_reports, event_type, addr_type, addr[5], addr[4], addr[3],
+                      addr[2], addr[1], addr[0], data_len);
+        }
 
 #if WAKE_ON_KNOWN_BLE_PEER
         if (known_ble_peer_matches(addr_type, addr)) {
@@ -377,6 +412,56 @@ static bool le_directed_advertising_report_matches(const uint8_t *params, size_t
     return false;
 }
 
+static bool le_extended_advertising_report_matches(const uint8_t *params, size_t len, const char **reason) {
+    if (len < 2 || params[0] != HCI_SUBEVENT_LE_EXTENDED_ADVERTISING_REPORT) return false;
+
+    uint8_t reports = params[1];
+    size_t pos = 2;
+    for (uint8_t report = 0; report < reports; report++) {
+        if (pos + 24u > len) break;
+
+        uint16_t event_type = (uint16_t)params[pos] | ((uint16_t)params[pos + 1u] << 8u);
+        uint8_t addr_type = params[pos + 2u];
+        const uint8_t *addr = &params[pos + 3u];
+        uint8_t data_len = params[pos + 23u];
+        if (pos + 24u + data_len > len) break;
+        standby_adv_reports++;
+        if ((standby_adv_reports & 0x0fu) == 1u) {
+            debug_log("standby ext adv #%lu evt=0x%04x type=%u addr=%02x:%02x:%02x:%02x:%02x:%02x data=%u",
+                      standby_adv_reports, event_type, addr_type, addr[5], addr[4], addr[3],
+                      addr[2], addr[1], addr[0], data_len);
+        }
+
+#if WAKE_ON_KNOWN_BLE_PEER
+        if (known_ble_peer_matches(addr_type, addr)) {
+            if (reason) *reason = "known BLE peer extended advertisement";
+            return true;
+        }
+#endif
+
+#if WAKE_ON_CONNECTABLE_BLE_ADV
+        if (event_type & 0x0001u) {
+            if (reason) *reason = "BLE connectable extended advertisement";
+            return true;
+        }
+        if (event_type & 0x0004u) {
+            if (reason) *reason = "BLE directed extended advertisement";
+            return true;
+        }
+#endif
+
+        bool learn_peer = false;
+        if (le_advertising_data_matches(&params[pos + 24u], data_len, reason, &learn_peer)) {
+            if (learn_peer) (void)remember_ble_peer(addr_type, addr);
+            return true;
+        }
+
+        pos += 24u + data_len;
+    }
+
+    return false;
+}
+
 bool wake_policy_packet_matches(hci_packet_type_t type, const uint8_t *packet, uint16_t len, const char **reason) {
     if (reason) *reason = NULL;
     if (type != HCI_PKT_EVENT || len < 2) return false;
@@ -398,6 +483,11 @@ bool wake_policy_packet_matches(hci_packet_type_t type, const uint8_t *packet, u
     if (packet[0] == HCI_EVENT_LE_META && len >= 4 &&
         packet[2] == HCI_SUBEVENT_LE_DIRECTED_ADVERTISING_REPORT) {
         return le_directed_advertising_report_matches(&packet[2], (size_t)len - 2u, reason);
+    }
+
+    if (packet[0] == HCI_EVENT_LE_META && len >= 4 &&
+        packet[2] == HCI_SUBEVENT_LE_EXTENDED_ADVERTISING_REPORT) {
+        return le_extended_advertising_report_matches(&packet[2], (size_t)len - 2u, reason);
     }
 
     return false;

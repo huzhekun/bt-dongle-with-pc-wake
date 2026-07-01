@@ -6,6 +6,8 @@
 #include <string.h>
 
 #if ENABLE_CDC_DEBUG
+#include "power_supervisor.h"
+
 #include "pico/bootrom.h"
 #include "pico/stdlib.h"
 #include "pico/stdio_usb.h"
@@ -55,6 +57,19 @@ static void debug_handle_command(void) {
         debug_log("Entering BOOTSEL");
         sleep_ms(50);
         reset_usb_boot(0, 0);
+    } else if (debug_command_equals("state")) {
+        debug_log("debug state=%d pwr_ok=%u usb_vbus=%u last_wake=%s",
+                  (int)power_supervisor_get_state(),
+                  power_supervisor_pwr_ok() ? 1u : 0u,
+                  power_supervisor_usb_vbus_present() ? 1u : 0u,
+                  power_supervisor_last_wake_reason());
+    } else if (debug_command_equals("standby")) {
+        power_supervisor_debug_force_standby(true);
+    } else if (debug_command_equals("host")) {
+        power_supervisor_debug_force_standby(false);
+    } else if (debug_command_equals("wake")) {
+        debug_log("debug wake requested");
+        power_supervisor_request_wake("debug command");
     } else if (command_len > 0u) {
         debug_log("Unknown debug command: %s", command_buf);
     }

@@ -19,6 +19,8 @@ static bool arch_ready;
 static uint8_t rx_buf[CYW43_HCI_RX_BUF_SIZE] __attribute__((aligned(4)));
 static uint8_t tx_buf[CYW43_HCI_RX_BUF_SIZE] __attribute__((aligned(4)));
 
+static bool cyw43_backend_send_command_sync(const uint8_t *command, uint16_t len, uint16_t opcode);
+
 static void cyw43_backend_set_rx_callback(hci_rx_cb_t cb) {
     rx_cb = cb;
 }
@@ -47,7 +49,7 @@ static bool cyw43_backend_reset_controller(void) {
         (uint8_t)(HCI_OPCODE_RESET >> 8u),
         0x00
     };
-    return cyw43_backend_send(HCI_PKT_COMMAND, hci_reset, sizeof(hci_reset));
+    return cyw43_backend_send_command_sync(hci_reset, sizeof(hci_reset), HCI_OPCODE_RESET);
 }
 
 static bool cyw43_backend_wait_command_complete(uint16_t opcode, uint32_t timeout_ms) {

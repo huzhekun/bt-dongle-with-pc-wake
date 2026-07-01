@@ -47,6 +47,7 @@ bool hci_host_send_cmd_sync(uint16_t opcode, const uint8_t *params, uint8_t para
                 result->status = got_status;
                 result->complete = true;
             }
+            debug_log("standby HCI cmd 0x%04x status=0x%02x", opcode, got_status);
             return got_status == 0;
         }
         tight_loop_contents();
@@ -58,13 +59,14 @@ bool hci_host_send_cmd_sync(uint16_t opcode, const uint8_t *params, uint8_t para
         result->status = 0xff;
         result->complete = false;
     }
+    debug_log("standby HCI cmd 0x%04x timeout", opcode);
     return false;
 }
 
 bool hci_host_configure_standby_wake(void) {
     hci_cmd_result_t result;
     static const uint8_t event_mask[8] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3f};
-    static const uint8_t le_event_mask[8] = {0x1f, 0x04, 0, 0, 0, 0, 0, 0};
+    static const uint8_t le_event_mask[8] = {0x1f, 0x14, 0, 0, 0, 0, 0, 0};
     static const uint8_t le_scan_params[] = {
         0x01,       // active scan
         0x60, 0x00, // interval
@@ -77,7 +79,6 @@ bool hci_host_configure_standby_wake(void) {
 
     debug_log("standby HCI host init");
     if (!host_transport->reset_controller()) return false;
-    if (!hci_host_send_cmd_sync(HCI_OPCODE_RESET, NULL, 0, &result, 1000)) return false;
     (void)hci_host_send_cmd_sync(HCI_OPCODE_READ_LOCAL_VERSION, NULL, 0, &result, 1000);
     (void)hci_host_send_cmd_sync(HCI_OPCODE_READ_BD_ADDR, NULL, 0, &result, 1000);
     if (!hci_host_send_cmd_sync(HCI_OPCODE_SET_EVENT_MASK, event_mask, sizeof(event_mask), &result, 1000)) return false;

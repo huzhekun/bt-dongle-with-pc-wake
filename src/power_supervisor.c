@@ -8,6 +8,7 @@
 
 static power_state_t state = POWER_STATE_UNKNOWN;
 static bool wake_requested;
+static bool debug_force_standby;
 static bool pwr_ok_filtered;
 static bool pwr_ok_last_raw;
 static bool usb_vbus_filtered;
@@ -45,6 +46,12 @@ static bool debounce_bool(bool raw, bool *last_raw, bool *filtered, absolute_tim
 }
 
 static void update_power_inputs(void) {
+    if (debug_force_standby) {
+        pwr_ok_last_raw = pwr_ok_filtered = false;
+        usb_vbus_last_raw = usb_vbus_filtered = false;
+        return;
+    }
+
     (void)debounce_bool(pin_read_or_default(PIN_PWR_OK_SENSE, true),
                         &pwr_ok_last_raw, &pwr_ok_filtered, &pwr_ok_changed_at);
     (void)debounce_bool(pin_read_or_default(PIN_USB_VBUS_SENSE, true),
@@ -114,6 +121,21 @@ power_state_t power_supervisor_get_state(void) {
 
 const char *power_supervisor_last_wake_reason(void) {
     return wake_reason;
+}
+
+void power_supervisor_debug_force_standby(bool force) {
+    debug_force_standby = force;
+    if (force) {
+        pwr_ok_last_raw = pwr_ok_filtered = false;
+        usb_vbus_last_raw = usb_vbus_filtered = false;
+        standby_armed_at = nil_time;
+        wake_requested = false;
+        debug_log("debug force standby enabled");
+    } else {
+        pwr_ok_last_raw = pwr_ok_filtered = pin_read_or_default(PIN_PWR_OK_SENSE, true);
+        usb_vbus_last_raw = usb_vbus_filtered = pin_read_or_default(PIN_USB_VBUS_SENSE, true);
+        debug_log("debug force standby disabled");
+    }
 }
 
 void power_supervisor_pulse_power_button_ms(uint32_t ms) {
