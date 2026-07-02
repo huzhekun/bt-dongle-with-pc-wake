@@ -65,6 +65,7 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 - `-DENABLE_CDC_DEBUG=ON` to expose USB CDC debug serial.
 - `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses.
 - `-DENABLE_STANDBY_HID_KEYBOARD=ON` to expose a standby USB keyboard wake interface, enabled by default.
+- `-DSTANDBY_WAKE_ARM_DELAY_MS=60000` to delay standby Bluetooth scanning and wake pulses after PC-off detection; default is 60 seconds.
 - `-DSTANDBY_HID_WAKE_KEY=0x68` to choose the USB HID usage sent on wake; default is F13.
 - `-DENABLE_ACL_DEBUG_LOG=ON` for verbose ACL packet logging during transport debugging.
 - `-DWAKE_ON_KNOWN_BLE_PEER=ON` to wake when a BLE peer learned while the host was on advertises again, enabled by default.
@@ -85,6 +86,8 @@ The ESP32 UART backend has its own wiring and build options in [ESP32 HCI UART B
 ## Wake Behavior
 
 By default, `PWR_OK` and USB VBUS are assumed present when their pins are `-1`, which makes bench USB dongle bring-up easier. The Pico 2 W front-panel build enables automatic power-button wake when `PIN_PWR_BUTTON_OUT` is set: it releases the pin with pull-up, simulates a press by driving it low for 200 ms, then waits 10 seconds before trusting the power LED/sense input again.
+
+After the firmware detects that the PC is off, it waits `STANDBY_WAKE_ARM_DELAY_MS` before starting standby Bluetooth detection or allowing another wake pulse. The default is 60 seconds, which avoids immediately waking the PC again during shutdown or reboot transitions.
 
 When `ENABLE_STANDBY_HID_KEYBOARD=ON`, the USB device stays connected in standby as a composite Bluetooth HCI plus boot-keyboard device with remote wake advertised. The Bluetooth bridge is disabled while the Pico owns the controller for standby scanning, and a matching wake event requests USB remote wake plus an F13 key press. If HID wake is disabled, the older behavior is used: when the power LED/sense input reads low, the firmware detaches USB while it runs the standby HCI scanner. For pure USB dongle testing, either hold the sense pin high or build with `-DPIN_PWR_OK_SENSE=-1`.
 

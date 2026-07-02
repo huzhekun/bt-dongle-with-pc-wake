@@ -21,7 +21,9 @@ static absolute_time_t usb_vbus_changed_at;
 static absolute_time_t standby_armed_at;
 
 #define POWER_SENSE_DEBOUNCE_MS 250u
-#define STANDBY_WAKE_ARM_DELAY_MS 3000u
+#ifndef STANDBY_WAKE_ARM_DELAY_MS
+#define STANDBY_WAKE_ARM_DELAY_MS 60000u
+#endif
 #ifndef POWER_BUTTON_PULSE_MS
 #define POWER_BUTTON_PULSE_MS 200u
 #endif
@@ -43,6 +45,15 @@ static bool debounce_bool(bool raw, bool *last_raw, bool *filtered, absolute_tim
         *filtered = raw;
     }
     return *filtered;
+}
+
+static absolute_time_t standby_arm_deadline(void) {
+    if (debug_force_standby || STANDBY_WAKE_ARM_DELAY_MS == 0u) return nil_time;
+    return make_timeout_time_ms(STANDBY_WAKE_ARM_DELAY_MS);
+}
+
+static bool standby_wake_armed(void) {
+    return is_nil_time(standby_armed_at) || time_reached(standby_armed_at);
 }
 
 static void update_power_inputs(void) {
@@ -100,11 +111,11 @@ void power_supervisor_init(void) {
     usb_vbus_filtered = usb_vbus_last_raw = pin_read_or_default(PIN_USB_VBUS_SENSE, true);
     pwr_ok_changed_at = make_timeout_time_ms(0);
     usb_vbus_changed_at = make_timeout_time_ms(0);
-    standby_armed_at = make_timeout_time_ms(STANDBY_WAKE_ARM_DELAY_MS);
 
     state = (pwr_ok_filtered && usb_vbus_filtered)
                 ? POWER_STATE_HOST_ON_USB_HCI
                 : POWER_STATE_HOST_OFF;
+    standby_armed_at = state == POWER_STATE_HOST_OFF ? standby_arm_deadline() : nil_time;
 }
 
 bool power_supervisor_pwr_ok(void) {
@@ -151,7 +162,7 @@ void power_supervisor_pulse_power_button_ms(uint32_t ms) {
 void power_supervisor_request_wake(const char *reason) {
     if (state != POWER_STATE_STANDBY_HCI_HOST && state != POWER_STATE_HOST_OFF) return;
     if (!time_reached(cooldown_until)) return;
-    if (!time_reached(standby_armed_at)) return;
+    if (!standby_wake_armed()) return;
     wake_reason = reason ? reason : "wake policy";
     wake_requested = true;
 }
@@ -160,6 +171,15 @@ static void set_state(power_state_t next) {
     if (state == next) return;
     debug_log("power state %d -> %d", state, next);
     state = next;
+    if (state == POWER_STATE_HOST_OFF) {
+        standby_armed_at = standby_arm_deadline();
+        wake_requested = false;
+        if (!is_nil_time(standby_armed_at)) {
+            debug_log("standby wake arm delay: %lu ms", (unsigned long)STANDBY_WAKE_ARM_DELAY_MS);
+        }
+    } else if (state != POWER_STATE_STANDBY_HCI_HOST) {
+        standby_armed_at = nil_time;
+    }
 }
 
 void power_supervisor_task(void) {
@@ -173,7 +193,7 @@ void power_supervisor_task(void) {
     case POWER_STATE_HOST_OFF:
         if (power_supervisor_pwr_ok() && power_supervisor_usb_vbus_present()) {
             set_state(POWER_STATE_HOST_ON_USB_HCI);
-        } else {
+        } else if (standby_wake_armed()) {
             set_state(POWER_STATE_STANDBY_HCI_HOST);
         }
         break;
@@ -247,11 +267,5 @@ void power_supervisor_task(void) {
     default:
         set_state(POWER_STATE_HOST_OFF);
         break;
-    }
-
-    if (state == POWER_STATE_STANDBY_HCI_HOST && is_nil_time(standby_armed_at)) {
-        standby_armed_at = make_timeout_time_ms(STANDBY_WAKE_ARM_DELAY_MS);
-    } else if (state != POWER_STATE_STANDBY_HCI_HOST) {
-        standby_armed_at = nil_time;
     }
 }

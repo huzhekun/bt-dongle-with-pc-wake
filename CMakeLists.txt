@@ -51,6 +51,7 @@ set(USB_BTH_EVENT_EPSIZE 64 CACHE STRING "USB HCI event interrupt endpoint size"
 set(USB_BTH_DATA_EPSIZE 64 CACHE STRING "USB HCI ACL bulk endpoint size")
 set(POWER_BUTTON_PULSE_MS 200 CACHE STRING "PC power-button pulse duration")
 set(POST_WAKE_SENSE_SETTLE_MS 10000 CACHE STRING "Delay after power-button pulse before trusting power sense")
+set(STANDBY_WAKE_ARM_DELAY_MS 60000 CACHE STRING "Delay after PC-off detection before standby Bluetooth wake scanning is armed")
 set(BOOTSEL_CLEAR_HOLD_MS 5000 CACHE STRING "BOOTSEL hold time for clearing persisted BLE wake peers")
 set(STANDBY_HID_WAKE_KEY 0x68 CACHE STRING "USB HID key usage sent for standby wake, default F13")
 
@@ -137,6 +138,7 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     HCI_ACL_MAX_LEN=${HCI_ACL_MAX_LEN}
     POWER_BUTTON_PULSE_MS=${POWER_BUTTON_PULSE_MS}
     POST_WAKE_SENSE_SETTLE_MS=${POST_WAKE_SENSE_SETTLE_MS}
+    STANDBY_WAKE_ARM_DELAY_MS=${STANDBY_WAKE_ARM_DELAY_MS}
     BOOTSEL_CLEAR_HOLD_MS=${BOOTSEL_CLEAR_HOLD_MS}
     STANDBY_HID_WAKE_KEY=${STANDBY_HID_WAKE_KEY}
 )
