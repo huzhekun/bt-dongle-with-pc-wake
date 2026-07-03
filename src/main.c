@@ -37,7 +37,6 @@ static const hci_transport_t *select_transport(void) {
 static void backend_rx(hci_packet_type_t type, const uint8_t *packet, uint16_t len) {
     power_state_t state = power_supervisor_get_state();
     if (state == POWER_STATE_HOST_ON_USB_HCI && usb_bth_bridge_is_enabled()) {
-        wake_policy_observe_host_packet(type, packet, len);
         usb_bth_bridge_backend_packet(type, packet, len);
         return;
     }

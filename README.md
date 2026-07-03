@@ -16,7 +16,7 @@ The original Pico + external ESP32 UART-HCI backend is still available, but it i
 - Uses standby HCI host mode to scan for Bluetooth/BLE wake signals while the PC is off or asleep.
 - Can pulse a PC power-button circuit for wake.
 - Can expose a standby USB HID keyboard and send an F13 keypress for S3 wake.
-- Persists learned BLE wake peers in flash and lets you clear that allowlist by holding BOOTSEL.
+- Persists the host-synced BLE wake peer allowlist in flash and lets you clear it by holding BOOTSEL.
 
 SCO/iso endpoints are left in the USB descriptor because TinyUSB's premade BTH descriptor includes the companion interface expected by the Bluetooth USB transport shape. The bundled TinyUSB BTH class exposes command, ACL, and event callbacks/APIs; this project keeps packet parsing SCO-aware, but full SCO data pass-through will need either a TinyUSB BTH extension or a local BTH class driver with isochronous transfer callbacks.
 
@@ -73,11 +73,11 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 - `-DSTATUS_LED_BLINK_MS=1000` to set the status LED blink half-period while standby wake is waiting to arm.
 - `-DSTANDBY_HID_WAKE_KEY=0x68` to choose the USB HID usage sent on wake; default is F13.
 - `-DENABLE_ACL_DEBUG_LOG=ON` for verbose ACL packet logging during transport debugging.
-- `-DWAKE_ON_KNOWN_BLE_PEER=ON` to wake when a BLE peer learned while the host was on advertises again, enabled by default.
-- `-DWAKE_PERSIST_BLE_PEERS=ON` to keep learned BLE wake peers across power cycles, enabled by default.
-- `-DENABLE_BOOTSEL_CLEAR_WAKE_PEERS=ON` to clear learned BLE wake peers by holding BOOTSEL, enabled by default.
+- `-DWAKE_ON_KNOWN_BLE_PEER=ON` to wake when a host-synced paired BLE peer advertises again, enabled by default.
+- `-DWAKE_PERSIST_BLE_PEERS=ON` to keep the host-synced BLE wake peer allowlist across power cycles, enabled by default.
+- `-DENABLE_BOOTSEL_CLEAR_WAKE_PEERS=ON` to clear host-synced BLE wake peers by holding BOOTSEL, enabled by default.
 - `-DWAKE_ON_BLE_DIRECTED_ADV=ON` to wake on BLE directed advertisements, enabled by default.
-- `-DWAKE_ON_STADIA_ADV=ON` to wake on Stadia Controller BLE advertisements/scan responses, enabled by default.
+- `-DWAKE_ON_STADIA_ADV=ON` to wake on Stadia Controller BLE advertisements/scan responses.
 - `-DWAKE_ON_CONNECTABLE_BLE_ADV=ON` to wake on any connectable BLE advertisement, noisy but useful for testing.
 - `-DWAKE_ON_BLE_HID=ON` to wake on BLE HID service/appearance advertisements.
 - `-DWAKE_ON_BLE_CONTROLLER_NAME=ON` to wake on controller-like BLE local names.
@@ -102,7 +102,7 @@ The Pico 2 W onboard LED is off in normal USB Bluetooth dongle mode, slow-blinks
 
 When `ENABLE_STANDBY_HID_KEYBOARD=ON`, the USB device stays connected in standby as a composite Bluetooth HCI plus boot-keyboard device with remote wake advertised. The Bluetooth bridge is disabled while the Pico owns the controller for standby scanning, and a matching wake event requests USB remote wake plus an F13 key press. If HID wake is disabled, the older behavior is used: when the power LED/sense input reads low, the firmware detaches USB while it runs the standby HCI scanner. For pure USB dongle testing, either hold the sense pin high or build with `-DPIN_PWR_OK_SENSE=-1`.
 
-The default standby BLE wake policy targets devices trying to return to this adapter: classic Bluetooth connection requests, BLE directed advertisements, BLE advertisements from peers learned during earlier host-side BLE connections, and Stadia Controller advertisements whose local name starts with `Stadia`. Learned BLE peers are stored in flash so they survive power cycles. For a strict saved-address-only Stadia wake policy, disable `WAKE_ON_STADIA_ADV` after the controller has been learned. Broader BLE matching is available through the wake options above.
+The default standby BLE wake policy targets devices trying to return to this adapter: classic Bluetooth connection requests, BLE directed advertisements to the synced native adapter address, and BLE advertisements from peers synced from the host's paired-device database. The firmware does not learn or rotate this allowlist from observed Bluetooth traffic; rerunning the host sync helper sends the latest paired devices with `clear` plus `peer ...` commands. Broader BLE matching, including Stadia Controller local-name advertisements, is available through the wake options above.
 
 Hold the Pico BOOTSEL button for about 5 seconds to clear the persisted BLE wake peer list. This does not clear Windows or BlueZ Bluetooth pairing keys; it only resets the Pico's standby wake allowlist.
 

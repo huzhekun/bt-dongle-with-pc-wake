@@ -462,8 +462,8 @@ void usb_bth_bridge_task(void) {
             backend_tx_started_ms = to_ms_since_boot(get_absolute_time());
         }
     }
-}
 #endif
+}
 
 #if ENABLE_USB_BTH
 void tud_bt_hci_cmd_cb(void *hci_cmd, size_t cmd_len) {

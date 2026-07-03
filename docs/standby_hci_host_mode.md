@@ -20,14 +20,15 @@ Wake detection currently supports:
 
 ```text
 Classic Connection Request event
-BLE Advertising Report from a peer learned while the host was on
+BLE Advertising Report from a host-synced paired peer
 BLE Directed Advertising Report event when WAKE_ON_BLE_DIRECTED_ADV=ON
-BLE advertisement or scan response with a local name starting with "Stadia"
+BLE advertisement or scan response with a local name starting with "Stadia" when WAKE_ON_STADIA_ADV=ON
 ```
 
-BLE peers learned from successful host-side LE connection events, and Stadia
-advertisement matches, are kept in a small flash-backed wake allowlist. Hold
-BOOTSEL for about 5 seconds to clear that allowlist.
+Host-synced BLE peers are kept in a small flash-backed wake allowlist. The
+firmware does not learn or rotate that list from observed Bluetooth traffic;
+rerun the host sync helper to replace it with the latest paired devices. Hold
+BOOTSEL for about 5 seconds to clear the allowlist.
 
 BLE Advertising Report event when one of the broader debug filters is enabled:
 
