@@ -69,7 +69,7 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 - `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses.
 - `-DENABLE_STANDBY_HID_KEYBOARD=ON` to expose a standby USB keyboard wake interface, enabled by default.
 - `-DENABLE_CYW43_STATUS_LED=ON` to use the Pico W onboard LED for standby status, enabled by default for CYW43 builds.
-- `-DSTANDBY_WAKE_ARM_DELAY_MS=60000` to delay standby Bluetooth scanning and wake pulses after PC-off detection; default is 60 seconds.
+- `-DSTANDBY_WAKE_ARM_DELAY_MS=60000` to delay standby Bluetooth scanning and wake pulses after an observed PC shutdown; default is 60 seconds.
 - `-DSTATUS_LED_BLINK_MS=1000` to set the status LED blink half-period while standby wake is waiting to arm.
 - `-DSTANDBY_HID_WAKE_KEY=0x68` to choose the USB HID usage sent on wake; default is F13.
 - `-DENABLE_ACL_DEBUG_LOG=ON` for verbose ACL packet logging during transport debugging.
@@ -96,7 +96,7 @@ Use [Host native Bluetooth wake sync](docs/host_native_bluetooth_sync.md) to ins
 
 By default, `PWR_OK` and USB VBUS are assumed present when their pins are `-1`, which makes bench USB dongle bring-up easier. The Pico 2 W front-panel build enables automatic power-button wake when `PIN_PWR_BUTTON_OUT` is set: it releases the pin with pull-up, simulates a press by driving it low for 200 ms, then waits 10 seconds before trusting the power LED/sense input again.
 
-After the firmware detects that the PC is off, it waits `STANDBY_WAKE_ARM_DELAY_MS` before starting standby Bluetooth detection or allowing another wake pulse. The default is 60 seconds, which avoids immediately waking the PC again during shutdown or reboot transitions.
+After the firmware observes the PC shut down, it waits `STANDBY_WAKE_ARM_DELAY_MS` before starting standby Bluetooth detection or allowing another wake pulse. The default is 60 seconds, which avoids immediately waking the PC again during shutdown or reboot transitions. If the Pico boots while the PC is already off, standby detection arms immediately.
 
 The Pico 2 W onboard LED is off in normal USB Bluetooth dongle mode, slow-blinks during that standby arm delay, and stays on once standby Bluetooth scanning is active.
 

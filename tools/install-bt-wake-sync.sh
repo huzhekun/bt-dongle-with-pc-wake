@@ -75,13 +75,15 @@ require_cmd() {
 require_cmd install
 require_cmd python3
 require_cmd systemctl
-require_cmd btmgmt
+require_cmd bluetoothctl
 
-if ! command -v bluetoothctl >/dev/null 2>&1; then
-    echo "warning: bluetoothctl not found; sync can still use BlueZ files if pairing records exist" >&2
+if ! command -v btmgmt >/dev/null 2>&1; then
+    echo "warning: btmgmt not found; sync will rely on bluetoothctl for adapter discovery" >&2
 fi
 
-python3 -m py_compile "$repo_dir/tools/bt-wake-sync.py"
+tmp_compile=$(mktemp)
+BT_WAKE_SYNC_HELPER="$repo_dir/tools/bt-wake-sync.py" BT_WAKE_SYNC_PYC="$tmp_compile" python3 -c 'import os, py_compile; py_compile.compile(os.environ["BT_WAKE_SYNC_HELPER"], cfile=os.environ["BT_WAKE_SYNC_PYC"], doraise=True)'
+rm -f "$tmp_compile"
 
 detect_serial() {
     found=""
@@ -139,6 +141,7 @@ Requires=bluetooth.service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=30
 ExecStart=/usr/local/libexec/bt-wake-sync.py --serial $serial --adapter $adapter --config $config
 EOF
 

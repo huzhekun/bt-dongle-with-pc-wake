@@ -145,7 +145,7 @@ void power_supervisor_init(void) {
     state = (pwr_ok_filtered && usb_vbus_filtered)
                 ? POWER_STATE_HOST_ON_USB_HCI
                 : POWER_STATE_HOST_OFF;
-    standby_armed_at = state == POWER_STATE_HOST_OFF ? standby_arm_deadline() : nil_time;
+    standby_armed_at = nil_time;
 }
 
 bool power_supervisor_pwr_ok(void) {

@@ -19,13 +19,29 @@ A systemd oneshot service runs `tools/bt-wake-sync.py`, reads the native adapter
 Dependencies on the host:
 
 - Python 3. The helper only uses Python standard-library modules.
-- BlueZ user tools: `btmgmt` is required, and `bluetoothctl` is used as a fallback/source for
-  paired device addresses.
+- BlueZ user tools: `bluetoothctl` is required for adapter discovery and paired device
+  addresses. `btmgmt` is used only as a fallback if `bluetoothctl` cannot report the adapter
+  address.
 
 Install with the bundled script:
 
 ```sh
 sudo tools/install-bt-wake-sync.sh
+```
+
+If this machine previously used the temporary Tenda Bluetooth udev unbind rule or the BlueZ
+paired-device auto-connect replay timer, remove those host workarounds before installing the
+native sync service:
+
+```sh
+sudo systemctl disable --now bluez-paired-le-autoconnect.timer bluez-paired-le-autoconnect.service
+sudo rm -f /etc/systemd/system/bluez-paired-le-autoconnect.timer
+sudo rm -f /etc/systemd/system/bluez-paired-le-autoconnect.service
+sudo rm -f /usr/local/libexec/bluez-paired-le-autoconnect
+sudo rm -f /etc/udev/rules.d/80-disable-tenda-aic8800-bluetooth.rules
+sudo rm -f /usr/local/libexec/disable-tenda-aic8800-bluetooth
+sudo systemctl daemon-reload
+sudo udevadm control --reload-rules
 ```
 
 The installer auto-detects the wake controller CDC device under `/dev/serial/by-id` using the
@@ -51,6 +67,8 @@ The installer writes `/usr/local/libexec/bt-wake-sync.py`,
 `/etc/systemd/system/bt-wake-sync.service`, and
 `/etc/systemd/system/bt-wake-sync.path`, then enables the path watcher and starts one immediate
 sync. Use `--no-start` to install and enable the watcher without running that initial sync.
+The systemd oneshot has a 30-second start timeout; if the immediate sync fails, check
+`journalctl -u bt-wake-sync.service` and verify the serial path and Bluetooth adapter index.
 
 ## ESP32-WROOM boards with USB-serial bridges
 

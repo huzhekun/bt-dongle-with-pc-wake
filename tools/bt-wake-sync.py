@@ -2,6 +2,8 @@
 """Sync the host Bluetooth adapter identity and paired devices to the wake controller."""
 import argparse
 import configparser
+import fcntl
+import os
 import re
 import subprocess
 import sys
@@ -10,10 +12,16 @@ from pathlib import Path
 
 MAC_RE = re.compile(r"\b([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})\b")
 BLUEZ_CONFIG = Path("/var/lib/bluetooth")
+COMMAND_TIMEOUT_SECONDS = 10
 
 
 def run(cmd):
-    return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+    return subprocess.check_output(
+        cmd,
+        text=True,
+        stderr=subprocess.STDOUT,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+    )
 
 
 def normalize_mac(mac):
@@ -23,7 +31,36 @@ def normalize_mac(mac):
     return m.group(1).upper()
 
 
-def native_adapter_mac(adapter):
+def sysfs_adapter_mac(adapter):
+    if not str(adapter).isdigit():
+        raise ValueError("sysfs adapter lookup requires a numeric adapter index")
+
+    path = Path("/sys/class/bluetooth") / f"hci{adapter}" / "address"
+    return normalize_mac(path.read_text(encoding="ascii"))
+
+
+def bluetoothctl_adapter_macs():
+    out = run(["bluetoothctl", "list"])
+    return [normalize_mac(m.group(1)) for m in MAC_RE.finditer(out)]
+
+
+def bluetoothctl_adapter_mac(adapter):
+    if MAC_RE.fullmatch(str(adapter)):
+        return normalize_mac(adapter)
+
+    adapters = bluetoothctl_adapter_macs()
+    if str(adapter).isdigit() and int(adapter) < len(adapters):
+        return adapters[int(adapter)]
+
+    out = run(["bluetoothctl", "show"])
+    m = re.search(r"\bController\s+([0-9A-Fa-f:]{17})\b", out)
+    if m:
+        return normalize_mac(m.group(1))
+
+    raise RuntimeError("could not find adapter address in bluetoothctl output")
+
+
+def btmgmt_adapter_mac(adapter):
     out = run(["btmgmt", "--index", str(adapter), "info"])
     m = re.search(r"\baddr\s+([0-9A-Fa-f:]{17})\b", out)
     if not m:
@@ -33,8 +70,21 @@ def native_adapter_mac(adapter):
     return normalize_mac(m.group(1))
 
 
+def native_adapter_mac(adapter):
+    for lookup in (sysfs_adapter_mac, bluetoothctl_adapter_mac, btmgmt_adapter_mac):
+        try:
+            return lookup(adapter)
+        except (FileNotFoundError, ValueError, RuntimeError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+    raise RuntimeError(f"could not determine Bluetooth adapter address for adapter {adapter}")
+
+
 def bluetoothctl_paired_device_macs():
-    out = run(["bluetoothctl", "paired-devices"])
+    try:
+        out = run(["bluetoothctl", "devices", "Paired"])
+    except subprocess.CalledProcessError:
+        out = run(["bluetoothctl", "paired-devices"])
     return {normalize_mac(m.group(1)) for m in MAC_RE.finditer(out)}
 
 
@@ -80,7 +130,7 @@ def paired_device_macs(config_dir, adapter_mac):
     except FileNotFoundError:
         if not peers:
             raise
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         if not peers:
             raise
     return sorted(peers)
@@ -92,6 +142,13 @@ def write_line(dev, line):
     time.sleep(0.05)
 
 
+def open_serial(path):
+    fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+    return os.fdopen(fd, "r+b", buffering=0)
+
+
 def sync(serial_path, adapter, config_dir, dry_run=False):
     local = native_adapter_mac(adapter)
     peers = paired_device_macs(config_dir, local)
@@ -99,7 +156,7 @@ def sync(serial_path, adapter, config_dir, dry_run=False):
     if dry_run:
         print("\n".join(commands))
         return
-    with Path(serial_path).open("r+b", buffering=0) as dev:
+    with open_serial(serial_path) as dev:
         for command in commands:
             write_line(dev, command)
     print(f"synced adapter {local} and {len(peers)} paired device(s) to {serial_path}")
@@ -117,6 +174,9 @@ def main():
     except subprocess.CalledProcessError as exc:
         print(exc.output, file=sys.stderr, end="")
         return exc.returncode or 1
+    except subprocess.TimeoutExpired as exc:
+        print(f"bt-wake-sync: command timed out: {' '.join(exc.cmd)}", file=sys.stderr)
+        return 1
     except Exception as exc:
         print(f"bt-wake-sync: {exc}", file=sys.stderr)
         return 1
