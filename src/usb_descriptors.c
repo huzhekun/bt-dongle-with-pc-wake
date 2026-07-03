@@ -117,7 +117,7 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
 
 static const char *const string_desc_arr[] = {
     [STR_MANUFACTURER] = "Codex",
-    [STR_PRODUCT] = "Pico USB Bluetooth HCI Wake",
+    [STR_PRODUCT] = "Bluetooth USB Wake Device",
     [STR_SERIAL] = "0009",
     [STR_BTH] = "Bluetooth HCI",
 #if ENABLE_STANDBY_HID_KEYBOARD

@@ -107,7 +107,7 @@ def sync(serial_path, adapter, config_dir, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serial", default="/dev/serial/by-id/usb-Codex_Pico_USB_Bluetooth_HCI_Wake_0009-if00", help="wake-controller CDC serial device")
+    parser.add_argument("--serial", default="/dev/serial/by-id/usb-Codex_Bluetooth_USB_Wake_Device_0009-if00", help="wake-controller CDC serial device")
     parser.add_argument("--adapter", default="0", help="btmgmt adapter index")
     parser.add_argument("--config", default=str(BLUEZ_CONFIG), help="BlueZ config directory")
     parser.add_argument("--dry-run", action="store_true", help="print commands instead of writing serial")

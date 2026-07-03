@@ -16,20 +16,41 @@ A systemd oneshot service runs `tools/bt-wake-sync.py`, reads the native adapter
   Bluetooth sync flow, instead of trusting only currently visible devices.
 - `save` is accepted as a synchronization barrier; flash writes are still debounced by firmware.
 
-Install example:
+Dependencies on the host:
+
+- Python 3. The helper only uses Python standard-library modules.
+- BlueZ user tools: `btmgmt` is required, and `bluetoothctl` is used as a fallback/source for
+  paired device addresses.
+
+Install with the bundled script:
 
 ```sh
-sudo install -m 0755 tools/bt-wake-sync.py /usr/local/libexec/bt-wake-sync.py
-sudo install -m 0644 systemd/bt-wake-sync.service /etc/systemd/system/bt-wake-sync.service
-sudo install -m 0644 systemd/bt-wake-sync.path /etc/systemd/system/bt-wake-sync.path
-sudo systemctl daemon-reload
-sudo systemctl enable --now bt-wake-sync.path
-sudo systemctl start bt-wake-sync.service
+sudo tools/install-bt-wake-sync.sh
 ```
 
-Adjust the serial path in the service if your board enumerates under a different
-`/dev/serial/by-id` name. If your BlueZ state is not under `/var/lib/bluetooth`, pass
-`--config /path/to/bluetooth` in the service file.
+The installer auto-detects the wake controller CDC device under `/dev/serial/by-id` using the
+USB descriptor strings `Codex`, `Bluetooth USB Wake Device`, and serial `0009`. To inspect the
+path yourself:
+
+```sh
+ls -l /dev/serial/by-id/*Bluetooth*USB*Wake*Device*
+```
+
+If the board is not plugged in, was not built with `-DENABLE_CDC_DEBUG=ON`, or more than one
+matching board is connected, pass the serial path explicitly. You can also pass options for a
+nonzero Bluetooth adapter index or a nonstandard BlueZ state directory:
+
+```sh
+sudo tools/install-bt-wake-sync.sh \
+  --serial /dev/serial/by-id/usb-Codex_Bluetooth_USB_Wake_Device_0009-if00 \
+  --adapter 0 \
+  --config /var/lib/bluetooth
+```
+
+The installer writes `/usr/local/libexec/bt-wake-sync.py`,
+`/etc/systemd/system/bt-wake-sync.service`, and
+`/etc/systemd/system/bt-wake-sync.path`, then enables the path watcher and starts one immediate
+sync. Use `--no-start` to install and enable the watcher without running that initial sync.
 
 ## ESP32-WROOM boards with USB-serial bridges
 

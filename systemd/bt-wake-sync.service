@@ -5,4 +5,4 @@ Requires=bluetooth.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/libexec/bt-wake-sync.py --serial /dev/serial/by-id/usb-Codex_Pico_USB_Bluetooth_HCI_Wake_0009-if00 --adapter 0
+ExecStart=/usr/local/libexec/bt-wake-sync.py --serial /dev/serial/by-id/usb-Codex_Bluetooth_USB_Wake_Device_0009-if00 --adapter 0
