@@ -12,7 +12,7 @@
 
 #define MAX_KNOWN_BLE_PEERS 8u
 #define WAKE_PEER_MAGIC 0x57424c45u
-#define WAKE_PEER_VERSION 1u
+#define WAKE_PEER_VERSION 2u
 #define WAKE_PEER_SAVE_DELAY_MS 2000u
 
 #ifndef WAKE_PEER_FLASH_OFFSET
@@ -33,13 +33,17 @@ typedef struct {
     uint16_t size;
     uint32_t checksum;
     uint8_t count;
-    uint8_t reserved[3];
+    uint8_t has_local_addr;
+    uint8_t local_addr[6];
+    uint8_t reserved[4];
     ble_peer_t peers[MAX_KNOWN_BLE_PEERS];
 } wake_peer_store_t;
 
 _Static_assert(sizeof(wake_peer_store_t) <= FLASH_PAGE_SIZE, "wake peer store must fit one flash page");
 
 static ble_peer_t known_ble_peers[MAX_KNOWN_BLE_PEERS];
+static bool has_local_adapter_addr;
+static uint8_t local_adapter_addr[6];
 static uint8_t next_known_ble_peer;
 static bool peers_dirty;
 static absolute_time_t peers_dirty_at;
@@ -84,6 +88,8 @@ static void load_known_ble_peers(void) {
     }
 
     memcpy(known_ble_peers, store->peers, sizeof(known_ble_peers));
+    has_local_adapter_addr = store->has_local_addr != 0u;
+    memcpy(local_adapter_addr, store->local_addr, sizeof(local_adapter_addr));
     next_known_ble_peer = (uint8_t)(store->count % MAX_KNOWN_BLE_PEERS);
     debug_log("Loaded %u BLE wake peer(s)", store->count);
 #endif
@@ -105,6 +111,8 @@ static bool save_known_ble_peers(void) {
     store.version = WAKE_PEER_VERSION;
     store.size = sizeof(store);
     store.count = known_ble_peer_count();
+    store.has_local_addr = has_local_adapter_addr ? 1u : 0u;
+    memcpy(store.local_addr, local_adapter_addr, sizeof(local_adapter_addr));
     memcpy(store.peers, known_ble_peers, sizeof(known_ble_peers));
     store.checksum = store_checksum(&store);
 
@@ -140,6 +148,8 @@ static void mark_peers_dirty(void) {
 
 void wake_policy_init(void) {
     memset(known_ble_peers, 0, sizeof(known_ble_peers));
+    has_local_adapter_addr = false;
+    memset(local_adapter_addr, 0, sizeof(local_adapter_addr));
     next_known_ble_peer = 0;
     peers_dirty = false;
     load_known_ble_peers();
@@ -208,8 +218,22 @@ void wake_policy_clear_known_peers(void) {
     memset(known_ble_peers, 0, sizeof(known_ble_peers));
     next_known_ble_peer = 0;
     peers_dirty = false;
-    (void)save_known_ble_peers();
+    mark_peers_dirty();
     debug_log("Cleared BLE wake peer list");
+}
+
+bool wake_policy_set_local_adapter(const uint8_t *addr) {
+    if (!addr) return false;
+    memcpy(local_adapter_addr, addr, sizeof(local_adapter_addr));
+    has_local_adapter_addr = true;
+    mark_peers_dirty();
+    debug_log("Native adapter addr %02x:%02x:%02x:%02x:%02x:%02x",
+              addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+    return true;
+}
+
+bool wake_policy_add_known_peer(uint8_t addr_type, const uint8_t *addr) {
+    return remember_ble_peer(addr_type, addr);
 }
 
 static bool ascii_contains_token(const uint8_t *data, size_t len, const char *token) {
@@ -364,6 +388,11 @@ static bool le_directed_advertising_report_matches(const uint8_t *params, size_t
     for (uint8_t report = 0; report < reports; report++) {
         if (pos + 16u > len) break;
         uint8_t event_type = params[pos];
+        const uint8_t *target_addr = &params[pos + 9u];
+        if (has_local_adapter_addr && memcmp(target_addr, local_adapter_addr, 6) == 0) {
+            if (reason) *reason = "BLE directed advertisement to native adapter";
+            return true;
+        }
         if (event_type == 0x01u) {
             if (reason) *reason = "BLE directed advertisement";
             return true;

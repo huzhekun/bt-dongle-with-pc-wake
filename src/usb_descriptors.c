@@ -5,8 +5,10 @@
 #define USB_BCD 0x0100
 
 enum {
+#if ENABLE_USB_BTH
     ITF_NUM_BTH = 0,
     ITF_NUM_BTH_ISO,
+#endif
 #if ENABLE_STANDBY_HID_KEYBOARD
     ITF_NUM_HID,
 #endif
@@ -45,7 +47,8 @@ enum {
 #define EPNUM_CDC_IN 0x85
 #endif
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_BTH_DESC_LEN + \
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + \
+                          (ENABLE_USB_BTH ? TUD_BTH_DESC_LEN : 0) + \
                           (ENABLE_STANDBY_HID_KEYBOARD ? TUD_HID_DESC_LEN : 0) + \
                           (ENABLE_CDC_DEBUG ? TUD_CDC_DESC_LEN : 0))
 
@@ -59,7 +62,7 @@ static const tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
     .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200,
-#if ENABLE_CDC_DEBUG || ENABLE_STANDBY_HID_KEYBOARD
+#if ENABLE_CDC_DEBUG || ENABLE_STANDBY_HID_KEYBOARD || !ENABLE_USB_BTH
     .bDeviceClass = TUSB_CLASS_MISC,
     .bDeviceSubClass = MISC_SUBCLASS_COMMON,
     .bDeviceProtocol = MISC_PROTOCOL_IAD,
@@ -86,8 +89,10 @@ static const uint8_t desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
                           ENABLE_STANDBY_HID_KEYBOARD ? TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP : 0,
                           100),
+#if ENABLE_USB_BTH
     TUD_BTH_DESCRIPTOR(ITF_NUM_BTH, STR_BTH, EPNUM_BTH_EVENT, CFG_TUD_BTH_EVENT_EPSIZE, 1,
                        EPNUM_BTH_ACL_IN, EPNUM_BTH_ACL_OUT, CFG_TUD_BTH_DATA_EPSIZE, 9),
+#endif
 #if ENABLE_STANDBY_HID_KEYBOARD
     TUD_HID_DESCRIPTOR(ITF_NUM_HID, STR_HID, HID_ITF_PROTOCOL_KEYBOARD,
                        sizeof(desc_hid_report), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 10),

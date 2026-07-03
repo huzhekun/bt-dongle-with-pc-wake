@@ -270,6 +270,9 @@ static void usb_bth_bridge_acl_out_fragment(const uint8_t *fragment, uint16_t le
 }
 
 void usb_bth_bridge_task(void) {
+#if !ENABLE_USB_BTH
+    return;
+#else
     if (!bridge_enabled || !tud_ready()) return;
 
     if (backend_tx_in_flight) {
@@ -311,7 +314,9 @@ void usb_bth_bridge_task(void) {
         }
     }
 }
+#endif
 
+#if ENABLE_USB_BTH
 void tud_bt_hci_cmd_cb(void *hci_cmd, size_t cmd_len) {
     if (!bridge_enabled) return;
     log_hci_command("USB cb", hci_cmd, (uint16_t)cmd_len);
@@ -342,3 +347,5 @@ void tud_bt_acl_data_sent_cb(uint16_t sent_bytes) {
     backend_tx_in_flight = false;
     backend_tx_started_ms = 0;
 }
+
+#endif
