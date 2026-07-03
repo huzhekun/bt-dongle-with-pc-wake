@@ -1,0 +1,9 @@
+[Unit]
+Description=Resync Pico wake peers when BlueZ pairing data changes
+
+[Path]
+PathChanged=/var/lib/bluetooth
+Unit=bt-wake-sync.service
+
+[Install]
+WantedBy=multi-user.target

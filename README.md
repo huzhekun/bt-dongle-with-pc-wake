@@ -1,6 +1,6 @@
 # Pico 2 W USB Bluetooth HCI Wake Dongle
 
-Firmware for a Raspberry Pi Pico 2 W that acts as a USB Bluetooth HCI dongle and PC wake controller. The main path uses the Pico 2 W's onboard CYW43 Bluetooth controller:
+Firmware for a Raspberry Pi Pico 2 W that acts as a PC Bluetooth wake controller. By default the host keeps using its native Bluetooth adapter; the Pico only exposes a standby HID/CDC control interface and runs the Bluetooth controller during standby wake scanning. The main path uses the Pico 2 W's onboard CYW43 Bluetooth controller:
 
 ```text
 PC USB host -> Pico TinyUSB Bluetooth HCI device -> onboard CYW43 Bluetooth controller
@@ -10,8 +10,9 @@ The original Pico + external ESP32 UART-HCI backend is still available, but it i
 
 ## What It Does
 
-- Exposes a native USB Bluetooth HCI controller using TinyUSB's BTH device class.
-- Bridges USB HCI command, event, and ACL traffic to the Pico 2 W onboard CYW43 Bluetooth controller.
+- Keeps the host Bluetooth data path on the native PC Bluetooth adapter by default.
+- Provides an optional TinyUSB Bluetooth HCI bridge for descriptor/backend testing when `ENABLE_USB_BTH=ON`.
+- Accepts a host-synced native adapter MAC address and paired-device allowlist over CDC for standby wake matching.
 - Uses standby HCI host mode to scan for Bluetooth/BLE wake signals while the PC is off or asleep.
 - Can pulse a PC power-button circuit for wake.
 - Can expose a standby USB HID keyboard and send an F13 keypress for S3 wake.
@@ -34,11 +35,11 @@ Recommended bench/front-panel pins:
 
 ## Build
 
-For the normal Pico 2 W front-panel build:
+For the normal Pico 2 W front-panel build with native host Bluetooth handoff:
 
 ```powershell
 cd C:\Users\zheku\pico-usb-bt-wake
-cmake -S . -B build-pico2w -G Ninja -DHCI_BACKEND=cyw43 -DPICO_BOARD=pico2_w -DPIN_PWR_BUTTON_OUT=10 -DPIN_PWR_OK_SENSE=11 -DPIN_USB_VBUS_SENSE=-1
+cmake -S . -B build-pico2w -G Ninja -DHCI_BACKEND=cyw43 -DPICO_BOARD=pico2_w -DENABLE_USB_BTH=OFF -DENABLE_CDC_DEBUG=ON -DPIN_PWR_BUTTON_OUT=10 -DPIN_PWR_OK_SENSE=11 -DPIN_USB_VBUS_SENSE=-1
 cmake --build build-pico2w
 ```
 
@@ -61,6 +62,7 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 ## Useful Options
 
 - `-DHCI_BACKEND=cyw43` for the Pico 2 W onboard controller.
+- `-DENABLE_USB_BTH=OFF` to avoid emulating a host Bluetooth dongle; this is now the default.
 - `-DHCI_BACKEND=stub` for descriptor-only bring-up.
 - `-DENABLE_CDC_DEBUG=ON` to expose USB CDC debug serial.
 - `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses.
@@ -81,6 +83,10 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 - `-DPIN_PWR_BUTTON_OUT=<gpio>` for the isolated power-button pulse output.
 
 The ESP32 UART backend has its own wiring and build options in [ESP32 HCI UART Backend](docs/esp32_hci_uart.md).
+
+## Host Native Bluetooth Sync
+
+Use [Host native Bluetooth wake sync](docs/host_native_bluetooth_sync.md) to install the systemd service that copies the native adapter address and the BlueZ pairing database device identities to the wake controller. After a wake event, the controller pulses the PC power button or, on USB-device-capable boards, sends the standby HID key; the host Bluetooth stack resumes on the PC's native adapter. The same serial sync idea works with ESP32-WROOM boards that only expose a USB-to-UART bridge, but those boards cannot provide USB HID or USB remote wake because the bridge chip is not native USB device hardware.
 
 ## Wake Behavior
 

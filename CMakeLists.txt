@@ -14,7 +14,7 @@ pico_sdk_init()
 set(HCI_BACKEND "esp32_uart" CACHE STRING "HCI backend: esp32_uart, stub, cyw43")
 set_property(CACHE HCI_BACKEND PROPERTY STRINGS esp32_uart stub cyw43)
 
-option(ENABLE_USB_BTH "Expose TinyUSB Bluetooth HCI class" ON)
+option(ENABLE_USB_BTH "Expose TinyUSB Bluetooth HCI class" OFF)
 option(ENABLE_CDC_DEBUG "Expose USB CDC debug serial" OFF)
 option(ENABLE_POWER_SUPERVISOR "Enable PC power supervisor state machine" ON)
 option(ENABLE_STANDBY_HCI_HOST "Enable Pico-owned standby HCI host mode" ON)

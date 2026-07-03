@@ -1,4 +1,5 @@
 #include "debug_log.h"
+#include "wake_policy.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -12,7 +13,7 @@
 #endif
 
 #define LOG_RING_SIZE 4096u
-#define DEBUG_COMMAND_SIZE 32u
+#define DEBUG_COMMAND_SIZE 96u
 
 static char log_ring[LOG_RING_SIZE];
 static volatile uint16_t log_head;
@@ -37,6 +38,33 @@ static void log_ring_push(const char *s) {
 }
 
 #if ENABLE_CDC_DEBUG
+
+static int hex_nibble(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+static bool parse_mac_le(const char *text, uint8_t *addr) {
+    uint8_t parsed[6];
+    for (uint8_t i = 0; i < 6; i++) {
+        int hi = hex_nibble(text[i * 3u]);
+        int lo = hex_nibble(text[i * 3u + 1u]);
+        if (hi < 0 || lo < 0) return false;
+        parsed[5u - i] = (uint8_t)((hi << 4) | lo);
+        if (i < 5u && text[i * 3u + 2u] != ':') return false;
+    }
+    addr[0] = parsed[0]; addr[1] = parsed[1]; addr[2] = parsed[2];
+    addr[3] = parsed[3]; addr[4] = parsed[4]; addr[5] = parsed[5];
+    return text[17] == '\0' || text[17] == ' ' || text[17] == '\t';
+}
+
+static const char *skip_spaces(const char *s) {
+    while (*s == ' ' || *s == '\t') s++;
+    return s;
+}
+
 static bool debug_command_equals(const char *want) {
     const char *got = command_buf;
     while (*got && *want) {
@@ -55,6 +83,24 @@ static void debug_handle_command(void) {
         debug_log("Entering BOOTSEL");
         sleep_ms(50);
         reset_usb_boot(0, 0);
+    } else if (debug_command_equals("clear")) {
+        wake_policy_clear_known_peers();
+    } else if (debug_command_equals("save")) {
+        debug_log("Wake sync save requested");
+    } else if (strncmp(command_buf, "addr ", 5) == 0) {
+        uint8_t addr[6];
+        if (parse_mac_le(skip_spaces(&command_buf[5]), addr)) {
+            (void)wake_policy_set_local_adapter(addr);
+        } else {
+            debug_log("Bad addr command");
+        }
+    } else if (strncmp(command_buf, "peer ", 5) == 0) {
+        uint8_t addr[6];
+        if (parse_mac_le(skip_spaces(&command_buf[5]), addr)) {
+            (void)wake_policy_add_known_peer(0, addr);
+        } else {
+            debug_log("Bad peer command");
+        }
     } else if (command_len > 0u) {
         debug_log("Unknown debug command: %s", command_buf);
     }
