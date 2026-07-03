@@ -23,3 +23,4 @@ power_state_t power_supervisor_get_state(void);
 void power_supervisor_pulse_power_button_ms(uint32_t ms);
 void power_supervisor_request_wake(const char *reason);
 const char *power_supervisor_last_wake_reason(void);
+void power_supervisor_debug_force_standby(bool force);

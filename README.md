@@ -31,7 +31,7 @@ Recommended bench/front-panel pins:
 | Power-button pulse | 10 | Released as input with pull-up; press briefly drives low, matching a switch that shorts 3.3 V to ground. |
 | PC power LED sense | 11 | Input with pulldown; reads 3.3 V as PC-on. |
 | USB VBUS sense | -1 | Disabled by default; USB is assumed present. |
-| Status LED | -1 | Disabled by default; Pico 2 W onboard LED is not a normal GPIO. |
+| Status LED | Pico 2 W onboard LED | Blinks while standby wake is waiting to arm, solid while scanning, off in dongle mode. |
 
 ## Build
 
@@ -64,9 +64,13 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 - `-DHCI_BACKEND=cyw43` for the Pico 2 W onboard controller.
 - `-DENABLE_USB_BTH=OFF` to avoid emulating a host Bluetooth dongle; this is now the default.
 - `-DHCI_BACKEND=stub` for descriptor-only bring-up.
+- `-DSYS_CLOCK_KHZ=200000` to run the RP2350 system clock at 200 MHz; default `0` keeps the board/SDK clock.
 - `-DENABLE_CDC_DEBUG=ON` to expose USB CDC debug serial.
 - `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses.
 - `-DENABLE_STANDBY_HID_KEYBOARD=ON` to expose a standby USB keyboard wake interface, enabled by default.
+- `-DENABLE_CYW43_STATUS_LED=ON` to use the Pico W onboard LED for standby status, enabled by default for CYW43 builds.
+- `-DSTANDBY_WAKE_ARM_DELAY_MS=60000` to delay standby Bluetooth scanning and wake pulses after PC-off detection; default is 60 seconds.
+- `-DSTATUS_LED_BLINK_MS=1000` to set the status LED blink half-period while standby wake is waiting to arm.
 - `-DSTANDBY_HID_WAKE_KEY=0x68` to choose the USB HID usage sent on wake; default is F13.
 - `-DENABLE_ACL_DEBUG_LOG=ON` for verbose ACL packet logging during transport debugging.
 - `-DWAKE_ON_KNOWN_BLE_PEER=ON` to wake when a BLE peer learned while the host was on advertises again, enabled by default.
@@ -91,6 +95,10 @@ Use [Host native Bluetooth wake sync](docs/host_native_bluetooth_sync.md) to ins
 ## Wake Behavior
 
 By default, `PWR_OK` and USB VBUS are assumed present when their pins are `-1`, which makes bench USB dongle bring-up easier. The Pico 2 W front-panel build enables automatic power-button wake when `PIN_PWR_BUTTON_OUT` is set: it releases the pin with pull-up, simulates a press by driving it low for 200 ms, then waits 10 seconds before trusting the power LED/sense input again.
+
+After the firmware detects that the PC is off, it waits `STANDBY_WAKE_ARM_DELAY_MS` before starting standby Bluetooth detection or allowing another wake pulse. The default is 60 seconds, which avoids immediately waking the PC again during shutdown or reboot transitions.
+
+The Pico 2 W onboard LED is off in normal USB Bluetooth dongle mode, slow-blinks during that standby arm delay, and stays on once standby Bluetooth scanning is active.
 
 When `ENABLE_STANDBY_HID_KEYBOARD=ON`, the USB device stays connected in standby as a composite Bluetooth HCI plus boot-keyboard device with remote wake advertised. The Bluetooth bridge is disabled while the Pico owns the controller for standby scanning, and a matching wake event requests USB remote wake plus an F13 key press. If HID wake is disabled, the older behavior is used: when the power LED/sense input reads low, the firmware detaches USB while it runs the standby HCI scanner. For pure USB dongle testing, either hold the sense pin high or build with `-DPIN_PWR_OK_SENSE=-1`.
 

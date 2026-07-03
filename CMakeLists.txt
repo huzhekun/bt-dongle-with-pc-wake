@@ -20,6 +20,7 @@ option(ENABLE_POWER_SUPERVISOR "Enable PC power supervisor state machine" ON)
 option(ENABLE_STANDBY_HCI_HOST "Enable Pico-owned standby HCI host mode" ON)
 option(ENABLE_POWER_BUTTON_WAKE "Allow firmware to pulse the PC power-button output for wake" ON)
 option(ENABLE_STANDBY_HID_KEYBOARD "Expose a USB HID keyboard for standby S3 wake" ON)
+option(ENABLE_CYW43_STATUS_LED "Use the Pico W onboard LED for power/wake status when using the CYW43 backend" ON)
 option(ENABLE_USB_SCO "Expose SCO/iso endpoints required by TinyUSB BTH helper" OFF)
 option(ENABLE_UART_FLOW_CONTROL "Enable ESP32 UART RTS/CTS" ON)
 option(ENABLE_ACL_DEBUG_LOG "Log every ACL packet in CDC debug builds" OFF)
@@ -46,11 +47,14 @@ set(PIN_LED_FAULT -1 CACHE STRING "Fault LED GPIO, or -1")
 
 set(ESP32_HCI_UART_ID 1 CACHE STRING "UART peripheral used by ESP32 HCI transport")
 set(ESP32_HCI_UART_BAUD 921600 CACHE STRING "ESP32 HCI UART baud rate")
+set(SYS_CLOCK_KHZ 0 CACHE STRING "Optional system clock in kHz, or 0 for the board/SDK default")
 set(HCI_ACL_MAX_LEN 2048 CACHE STRING "Maximum ACL packet bytes kept in firmware queues")
-set(USB_BTH_EVENT_EPSIZE 16 CACHE STRING "USB HCI event interrupt endpoint size")
+set(USB_BTH_EVENT_EPSIZE 64 CACHE STRING "USB HCI event interrupt endpoint size")
 set(USB_BTH_DATA_EPSIZE 64 CACHE STRING "USB HCI ACL bulk endpoint size")
 set(POWER_BUTTON_PULSE_MS 200 CACHE STRING "PC power-button pulse duration")
 set(POST_WAKE_SENSE_SETTLE_MS 10000 CACHE STRING "Delay after power-button pulse before trusting power sense")
+set(STANDBY_WAKE_ARM_DELAY_MS 60000 CACHE STRING "Delay after PC-off detection before standby Bluetooth wake scanning is armed")
+set(STATUS_LED_BLINK_MS 1000 CACHE STRING "Status LED blink half-period while waiting to arm standby wake")
 set(BOOTSEL_CLEAR_HOLD_MS 5000 CACHE STRING "BOOTSEL hold time for clearing persisted BLE wake peers")
 set(STANDBY_HID_WAKE_KEY 0x68 CACHE STRING "USB HID key usage sent for standby wake, default F13")
 
@@ -105,6 +109,7 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     ENABLE_STANDBY_HCI_HOST=$<BOOL:${ENABLE_STANDBY_HCI_HOST}>
     ENABLE_POWER_BUTTON_WAKE=$<BOOL:${ENABLE_POWER_BUTTON_WAKE}>
     ENABLE_STANDBY_HID_KEYBOARD=$<BOOL:${ENABLE_STANDBY_HID_KEYBOARD}>
+    ENABLE_CYW43_STATUS_LED=$<BOOL:${ENABLE_CYW43_STATUS_LED}>
     ENABLE_USB_SCO=$<BOOL:${ENABLE_USB_SCO}>
     ENABLE_UART_FLOW_CONTROL=$<BOOL:${ENABLE_UART_FLOW_CONTROL}>
     ENABLE_ACL_DEBUG_LOG=$<BOOL:${ENABLE_ACL_DEBUG_LOG}>
@@ -134,9 +139,12 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     PIN_LED_FAULT=${PIN_LED_FAULT}
     ESP32_HCI_UART_ID=${ESP32_HCI_UART_ID}
     ESP32_HCI_UART_BAUD=${ESP32_HCI_UART_BAUD}
+    SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ}
     HCI_ACL_MAX_LEN=${HCI_ACL_MAX_LEN}
     POWER_BUTTON_PULSE_MS=${POWER_BUTTON_PULSE_MS}
     POST_WAKE_SENSE_SETTLE_MS=${POST_WAKE_SENSE_SETTLE_MS}
+    STANDBY_WAKE_ARM_DELAY_MS=${STANDBY_WAKE_ARM_DELAY_MS}
+    STATUS_LED_BLINK_MS=${STATUS_LED_BLINK_MS}
     BOOTSEL_CLEAR_HOLD_MS=${BOOTSEL_CLEAR_HOLD_MS}
     STANDBY_HID_WAKE_KEY=${STANDBY_HID_WAKE_KEY}
 )

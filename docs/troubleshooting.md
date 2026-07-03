@@ -31,3 +31,14 @@ Common causes:
 ## Wake Pulses Repeatedly
 
 The supervisor has a cooldown, but power-button hardware should still be tested with a dummy LED or meter before connecting a motherboard.
+
+## Bluetooth Input Periodically Lags
+
+For latency experiments, build with a modest RP2350 overclock:
+
+```sh
+cmake -S . -B build-pico2w-prod -G Ninja -DHCI_BACKEND=cyw43 -DPICO_BOARD=pico2_w -DPIN_PWR_BUTTON_OUT=10 -DPIN_PWR_OK_SENSE=11 -DPIN_USB_VBUS_SENSE=-1 -DSYS_CLOCK_KHZ=200000
+cmake --build build-pico2w-prod
+```
+
+Leave `SYS_CLOCK_KHZ=0` to use the board/SDK default clock.

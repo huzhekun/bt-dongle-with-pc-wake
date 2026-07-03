@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically replay BlueZ mgmt auto-connect entries
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=15s
+AccuracySec=5s
+Unit=bluez-paired-le-autoconnect.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Replay BlueZ mgmt auto-connect entries for paired LE devices
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/bluez-paired-le-autoconnect
+
+[Install]
+WantedBy=multi-user.target

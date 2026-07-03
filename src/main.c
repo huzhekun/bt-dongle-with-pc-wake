@@ -1,5 +1,6 @@
 #include "pico/stdlib.h"
 #include "bsp/board_api.h"
+#include "hardware/clocks.h"
 #include "tusb.h"
 
 #include "bootsel_button.h"
@@ -14,6 +15,14 @@
 static const hci_transport_t *transport;
 static power_state_t last_state = POWER_STATE_UNKNOWN;
 static bool standby_configured;
+
+static void configure_system_clock(void) {
+#if SYS_CLOCK_KHZ > 0
+    if (!set_sys_clock_khz(SYS_CLOCK_KHZ, false)) {
+        panic("Cannot set SYS_CLOCK_KHZ=%u", (unsigned)SYS_CLOCK_KHZ);
+    }
+#endif
+}
 
 static const hci_transport_t *select_transport(void) {
 #if HCI_BACKEND_esp32_uart
@@ -68,6 +77,7 @@ static void enter_standby_mode(void) {
 }
 
 int main(void) {
+    configure_system_clock();
     stdio_init_all();
     sleep_ms(300);
     board_init();
